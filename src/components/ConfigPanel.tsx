@@ -122,6 +122,7 @@ function StatusBadge({ status }: { status: AIConfig['runStatus'] }) {
     quota_exhausted: { label: '额度耗尽', cls: 'bg-red-500/20 text-red-400' },
     error: { label: '错误', cls: 'bg-red-500/20 text-red-400' },
     paused: { label: '已暂停', cls: 'bg-amber-500/20 text-amber-400' },
+    eliminated: { label: '已淘汰', cls: 'bg-red-600/30 text-red-300' },
   };
   const c = config[status] || config.active;
   return <span className={`text-xs px-2 py-0.5 rounded-lg font-medium ${c.cls}`}>{c.label}</span>;

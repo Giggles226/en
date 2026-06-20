@@ -84,7 +84,7 @@ export function RuleEditor() {
             <textarea
               value={draft.rules}
               onChange={(e) => setDraft({ ...draft, rules: e.target.value })}
-              rows={6}
+              rows={4}
               placeholder="描述比赛规则，会每轮注入给模型..."
               className="w-full bg-slate-900/80 border border-slate-600 rounded-2xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition resize-none"
             />
@@ -92,32 +92,66 @@ export function RuleEditor() {
 
           <div>
             <label className="block text-sm text-slate-300 mb-1.5 font-medium">
-              裁判评分标准
+              裁判淘汰/存活判定标准
             </label>
             <textarea
               value={draft.judgeCriteria}
               onChange={(e) => setDraft({ ...draft, judgeCriteria: e.target.value })}
               rows={4}
-              placeholder="告诉裁判模型如何评分..."
+              placeholder="告诉裁判模型如何判定淘汰和存活..."
               className="w-full bg-slate-900/80 border border-slate-600 rounded-2xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition resize-none"
             />
           </div>
 
           <div>
             <label className="block text-sm text-slate-300 mb-1.5 font-medium">
-              最大轮次
+              裁判Agent行为规则
             </label>
-            <select
-              value={draft.maxRounds}
-              onChange={(e) => setDraft({ ...draft, maxRounds: parseInt(e.target.value) })}
-              className="w-full bg-slate-900/80 border border-slate-600 rounded-2xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition"
-            >
-              {[1, 2, 3, 5, 7, 10].map((n) => (
-                <option key={n} value={n}>
-                  {n} 轮
-                </option>
-              ))}
-            </select>
+            <textarea
+              value={draft.eliminationRules}
+              onChange={(e) => setDraft({ ...draft, eliminationRules: e.target.value })}
+              rows={3}
+              placeholder="定义裁判Agent如何主持游戏、进行私人对话..."
+              className="w-full bg-slate-900/80 border border-slate-600 rounded-2xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition resize-none"
+            />
+          </div>
+
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="block text-sm text-slate-300 mb-1.5 font-medium">
+                最大轮次
+              </label>
+              <select
+                value={draft.maxRounds}
+                onChange={(e) => setDraft({ ...draft, maxRounds: parseInt(e.target.value) })}
+                className="w-full bg-slate-900/80 border border-slate-600 rounded-2xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition"
+              >
+                {[1, 2, 3, 5, 7, 10].map((n) => (
+                  <option key={n} value={n}>
+                    {n} 轮
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex-1">
+              <label className="block text-sm text-slate-300 mb-1.5 font-medium">
+                每轮私人对话回合数
+              </label>
+              <select
+                value={draft.maxPrivateTurns}
+                onChange={(e) =>
+                  setDraft({ ...draft, maxPrivateTurns: parseInt(e.target.value) })
+                }
+                className="w-full bg-slate-900/80 border border-slate-600 rounded-2xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 transition"
+              >
+                {[1, 2, 3, 5].map((n) => (
+                  <option key={n} value={n}>
+                    {n} 回合
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div>

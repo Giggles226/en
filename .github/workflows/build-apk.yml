@@ -1,0 +1,80 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build-apk:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0 ndk;27.0.12077973'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Install Tauri CLI
+        run: npm install -g @tauri-apps/cli@latest
+
+      - name: Build Android APK (release)
+        run: npx tauri android build --debug
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+          JAVA_HOME: ${{ env.JAVA_HOME }}
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AI-Tavern-Arena-APK
+          path: |
+            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          retention-days: 30
+
+      - name: Create Release and Upload APK
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "AI Tavern Arena v1.0.0"
+          tag_name: "v1.0.0"
+          body: |
+            ## AI 酒馆竞技场 - Android APK
+
+            - 生存博弈模式
+            - 裁判Agent全自动主持
+            - 私人对话淘汰制
+            - 支持多厂商API和本地Ollama
+
+            > 安装前请确保允许"未知来源"应用安装
+          files: |
+            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

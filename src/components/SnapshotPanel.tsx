@@ -57,6 +57,7 @@ function SnapshotCard({
 }) {
   const date = new Date(snapshot.createdAt);
   const isAuto = snapshot.label.includes('自动暂停');
+  const eliminatedCount = snapshot.eliminatedModels?.length || 0;
 
   return (
     <div
@@ -75,6 +76,7 @@ function SnapshotCard({
           <p className="text-xs text-slate-400 mt-0.5">
             {date.toLocaleString()} · 第{snapshot.currentRound + 1}轮
             · {snapshot.competitors.length}个模型
+            {eliminatedCount > 0 && <span className="text-red-400"> · 💀{eliminatedCount}淘汰</span>}
           </p>
           {snapshot.pausedReason && (
             <p className="text-xs text-amber-400 mt-1 truncate">

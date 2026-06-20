@@ -1,12 +1,16 @@
 import { useArenaStore } from '../stores/arenaStore';
 
 export function ScoreBoard() {
-  const { competitors, judgeModel, totalScores } = useArenaStore();
+  const { competitors, judgeModel, totalScores, eliminatedModels } = useArenaStore();
 
-  // 合并所有模型，计算累计分数
+  // 合并所有模型
   const allModels = [
-    ...competitors.map((c) => ({ ...c, isJudge: false })),
-    ...(judgeModel ? [{ ...judgeModel, isJudge: true }] : []),
+    ...competitors.map((c) => ({
+      ...c,
+      isJudge: false,
+      isEliminated: eliminatedModels.includes(c.id) || c.runStatus === 'eliminated',
+    })),
+    ...(judgeModel ? [{ ...judgeModel, isJudge: true, isEliminated: false }] : []),
   ];
 
   const sortedModels = allModels
@@ -37,14 +41,18 @@ export function ScoreBoard() {
               <div
                 key={model.id}
                 className={`flex items-center gap-3 p-3 rounded-2xl transition ${
-                  isActive
+                  model.isEliminated
+                    ? 'bg-red-500/10 border border-red-500/20'
+                    : isActive
                     ? 'bg-gradient-to-r from-yellow-500/20 to-amber-500/10 border border-yellow-500/30'
                     : 'bg-slate-900/40'
                 }`}
               >
                 <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
-                    index === 0 && model.total > 0
+                    model.isEliminated
+                      ? 'bg-red-600/50 text-red-300'
+                      : index === 0 && model.total > 0
                       ? 'bg-yellow-500 text-yellow-900'
                       : index === 1 && model.total > 0
                       ? 'bg-slate-300 text-slate-800'
@@ -53,7 +61,7 @@ export function ScoreBoard() {
                       : 'bg-slate-700 text-slate-300'
                   }`}
                 >
-                  {model.total > 0 ? index + 1 : '-'}
+                  {model.isEliminated ? '💀' : model.total > 0 ? index + 1 : '-'}
                 </div>
 
                 <span className="text-2xl">{model.icon}</span>
@@ -62,15 +70,24 @@ export function ScoreBoard() {
                   <p className="font-bold text-white truncate text-sm">
                     {model.name}
                   </p>
-                  {model.isJudge && (
-                    <span className="text-xs text-yellow-400">裁判</span>
-                  )}
+                  <div className="flex gap-1">
+                    {model.isJudge && (
+                      <span className="text-xs text-yellow-400">裁判</span>
+                    )}
+                    {model.isEliminated && (
+                      <span className="text-xs text-red-400">已淘汰</span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="text-right">
                   <p
                     className={`text-xl font-bold ${
-                      isActive ? 'text-yellow-400' : 'text-white'
+                      model.isEliminated
+                        ? 'text-red-400 line-through'
+                        : isActive
+                        ? 'text-yellow-400'
+                        : 'text-white'
                     }`}
                   >
                     {model.total}

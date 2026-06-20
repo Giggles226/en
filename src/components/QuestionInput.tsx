@@ -3,18 +3,32 @@ import { useArenaStore } from '../stores/arenaStore';
 
 export function QuestionInput() {
   const {
-    question, setQuestion, status, round, gameRule, startRound,
+    question, setQuestion, status, phase, round, gameRule, startRound,
     competitors, judgeModel, error, nextRound, resetGame, resumeGame,
+    eliminatedModels,
   } = useArenaStore();
 
   const [localQuestion, setLocalQuestion] = useState(question);
-  const isRunning = status === 'loading' || status === 'judging';
+  const isRunning = status === 'loading';
   const isFinished = status === 'finished';
   const isPaused = status === 'paused';
-  const activeCompetitors = competitors.filter((c) => c.runStatus === 'active');
+  const survivors = competitors.filter(
+    (c) => c.runStatus === 'active' && !eliminatedModels.includes(c.id)
+  );
 
   const handleResume = () => {
     resumeGame();
+  };
+
+  const phaseLabel: Record<string, string> = {
+    idle: '待开始',
+    judge_reading_rules: '📖 裁判读取规则中...',
+    private_conversations: '💬 私人对话中...',
+    judge_deliberation: '⚖️ 淘汰判定中...',
+    public_announcement: '📢 公开发言中...',
+    round_end: '✅ 本轮结束',
+    paused: '⏸️ 已暂停',
+    game_over: '🏁 游戏结束',
   };
 
   return (
@@ -24,32 +38,29 @@ export function QuestionInput() {
           第 {round + 1} / {gameRule.maxRounds} 轮
         </span>
         <div className={`px-3 py-1 rounded-xl text-xs font-bold ${
-          status === 'loading' ? 'bg-blue-500/20 text-blue-400' :
-          status === 'judging' ? 'bg-purple-500/20 text-purple-400' :
-          status === 'finished' ? 'bg-green-500/20 text-green-400' :
-          status === 'paused' ? 'bg-amber-500/20 text-amber-400' :
+          isRunning ? 'bg-blue-500/20 text-blue-400' :
+          isFinished ? 'bg-green-500/20 text-green-400' :
+          isPaused ? 'bg-amber-500/20 text-amber-400' :
           'bg-slate-700 text-slate-400'
         }`}>
-          {status === 'loading' ? '答题中...' :
-           status === 'judging' ? '评分中...' :
-           status === 'finished' ? '本回合结束' :
-           status === 'paused' ? '⏸️ 已暂停' : '待开始'}
+          {phaseLabel[phase] || phaseLabel.idle}
         </div>
       </div>
 
       <div className="flex items-center gap-4 mb-4 text-xs text-slate-400">
-        <span>🤖 {activeCompetitors.length} 个活跃</span>
+        <span>🟢 {survivors.length} 个存活</span>
+        <span>💀 {eliminatedModels.length} 个淘汰</span>
         <span>👑 {judgeModel?.runStatus === 'active' ? '裁判就绪' : '裁判未就绪'}</span>
         <span>📜 {gameRule.name}</span>
       </div>
 
       <div className="mb-4">
         <label className="block text-sm text-slate-300 mb-1.5 font-medium">
-          📜 本轮问题
+          📜 本轮主题/问题
         </label>
         <textarea value={localQuestion}
           onChange={(e) => { setLocalQuestion(e.target.value); setQuestion(e.target.value); }}
-          placeholder="输入问题让模型们较量..."
+          placeholder="输入主题让裁判Agent主持博弈..."
           disabled={isRunning || isPaused}
           rows={3}
           className="w-full bg-slate-900/80 border border-slate-600 rounded-2xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition text-base disabled:opacity-50 resize-none" />
@@ -67,17 +78,21 @@ export function QuestionInput() {
             className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-bold py-3.5 rounded-2xl transition shadow-lg shadow-green-500/20 text-base">
             ▶️ 一键恢复游戏
           </button>
+        ) : isRunning ? (
+          <div className="w-full bg-slate-700 text-slate-400 font-bold py-3.5 rounded-2xl text-center text-base">
+            ⏳ 裁判Agent正在执行游戏流程...
+          </div>
         ) : !isFinished ? (
           <button onClick={() => startRound()}
-            disabled={isRunning || activeCompetitors.length < 2 || !judgeModel || !localQuestion.trim()}
+            disabled={isRunning || survivors.length < 2 || !judgeModel || !localQuestion.trim()}
             className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 disabled:from-slate-700 disabled:to-slate-700 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-2xl transition shadow-lg shadow-orange-500/20 text-base">
-            {isRunning ? '⏳ 比赛进行中...' : '🎮 开始游戏'}
+            🎮 开始游戏（裁判Agent自动主持）
           </button>
         ) : null}
 
-        {isFinished && (
+        {isFinished && phase !== 'game_over' && (
           <div className="flex gap-2">
-            {round + 1 < gameRule.maxRounds && (
+            {round + 1 < gameRule.maxRounds && survivors.length > 1 && (
               <button onClick={nextRound}
                 className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-bold py-3.5 rounded-2xl transition">
                 ➡️ 下一轮
@@ -88,6 +103,13 @@ export function QuestionInput() {
               🔄 重新开始
             </button>
           </div>
+        )}
+
+        {isFinished && phase === 'game_over' && (
+          <button onClick={resetGame}
+            className="w-full bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white font-bold py-3.5 rounded-2xl transition">
+            🔄 重新开始
+          </button>
         )}
       </div>
     </div>

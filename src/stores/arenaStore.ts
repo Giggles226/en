@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { AIConfig, ArenaState, GameStatus, GameRule, GameSnapshot, RoundRecord } from '../types';
+import type { AIConfig, ArenaState, GameStatus, GameRule, GameSnapshot, RoundRecord, GamePhase, PrivateChat, PublicMessage, ChatMessage } from '../types';
 import { generateId, createEmptyConfig, createDefaultGameRule, createSnapshotId, pickColor, pickIcon } from '../types';
 
 interface ArenaActions {
   // 基础
   setStatus: (status: GameStatus) => void;
+  setPhase: (phase: GamePhase) => void;
   setQuestion: (question: string) => void;
   addCompetitor: (competitor: Omit<AIConfig, 'id'>) => AIConfig;
   removeCompetitor: (id: string) => void;
@@ -20,6 +21,15 @@ interface ArenaActions {
   setGameRule: (rule: GameRule) => void;
   // 模型状态
   updateModelStatus: (id: string, status: AIConfig['runStatus'], error?: string) => void;
+  // 私人对话
+  initPrivateChats: (competitorIds: string[]) => void;
+  addPrivateMessage: (competitorId: string, message: ChatMessage) => void;
+  setCurrentConversationId: (id: string | null) => void;
+  // 淘汰
+  eliminateModels: (ids: string[], reasons: Record<string, string>) => void;
+  // 公共发言
+  addPublicMessage: (message: PublicMessage) => void;
+  clearPublicMessages: () => void;
   // 快照
   createSnapshot: (label: string) => GameSnapshot;
   restoreSnapshot: (snapshot: GameSnapshot) => void;
@@ -45,6 +55,7 @@ export const useArenaStore = create<ArenaState & ArenaActions>()(
   persist(
     (set, get) => ({
       status: 'idle',
+      phase: 'idle',
       round: 0,
       gameRule: createDefaultGameRule(),
       question: '',
@@ -58,9 +69,15 @@ export const useArenaStore = create<ArenaState & ArenaActions>()(
       roundHistory: [],
       localLLMStatus: 'disconnected',
       localLLMMessage: '',
+      privateChats: [],
+      publicMessages: [],
+      eliminatedModels: [],
+      currentConversationId: null,
+      eliminationReasons: {},
 
       // ─── 基础操作 ───
       setStatus: (status) => set({ status }),
+      setPhase: (phase) => set({ phase }),
       setQuestion: (question) => set({ question }),
 
       addCompetitor: (competitor) => {
@@ -130,6 +147,50 @@ export const useArenaStore = create<ArenaState & ArenaActions>()(
               : s.judgeModel,
         })),
 
+      // ─── 私人对话 ───
+      initPrivateChats: (competitorIds) => {
+        const chats: PrivateChat[] = competitorIds.map((id) => ({
+          competitorId: id,
+          messages: [],
+          isActive: true,
+        }));
+        set({ privateChats: chats });
+      },
+
+      addPrivateMessage: (competitorId, message) =>
+        set((s) => ({
+          privateChats: s.privateChats.map((chat) =>
+            chat.competitorId === competitorId
+              ? { ...chat, messages: [...chat.messages, message] }
+              : chat
+          ),
+        })),
+
+      setCurrentConversationId: (id) => set({ currentConversationId: id }),
+
+      // ─── 淘汰 ───
+      eliminateModels: (ids, reasons) =>
+        set((s) => {
+          const newEliminated = [...s.eliminatedModels, ...ids];
+          return {
+            eliminatedModels: newEliminated,
+            eliminationReasons: { ...s.eliminationReasons, ...reasons },
+            competitors: s.competitors.map((c) =>
+              ids.includes(c.id) ? { ...c, runStatus: 'eliminated' as const } : c
+            ),
+            // 标记被淘汰模型的私人对话为非活跃
+            privateChats: s.privateChats.map((chat) =>
+              ids.includes(chat.competitorId) ? { ...chat, isActive: false } : chat
+            ),
+          };
+        }),
+
+      // ─── 公共发言 ───
+      addPublicMessage: (message) =>
+        set((s) => ({ publicMessages: [...s.publicMessages, message] })),
+
+      clearPublicMessages: () => set({ publicMessages: [] }),
+
       // ─── 快照 ───
       createSnapshot: (label) => {
         const s = get();
@@ -146,8 +207,8 @@ export const useArenaStore = create<ArenaState & ArenaActions>()(
           compressedSummary: compressRounds(s.roundHistory),
           pausedModelId: null,
           pausedReason: '',
+          eliminatedModels: [...s.eliminatedModels],
         };
-        // 持久化到 localStorage
         const existing = getSavedSnapshotsLocal();
         existing.push(snap);
         localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(existing));
@@ -163,11 +224,17 @@ export const useArenaStore = create<ArenaState & ArenaActions>()(
           totalScores: { ...snapshot.totalScores },
           round: snapshot.currentRound,
           status: 'idle',
+          phase: 'idle',
           question: '',
           answers: {},
           scores: {},
           judgeComment: '',
           error: null,
+          privateChats: [],
+          publicMessages: [],
+          eliminatedModels: [...(snapshot.eliminatedModels || [])],
+          currentConversationId: null,
+          eliminationReasons: {},
         });
       },
 
@@ -181,7 +248,6 @@ export const useArenaStore = create<ArenaState & ArenaActions>()(
       // ─── 暂停/恢复 ───
       pauseGame: (pausedModelId, reason) => {
         const s = get();
-        // 自动保存快照
         const snap: GameSnapshot = {
           id: createSnapshotId(),
           createdAt: Date.now(),
@@ -195,18 +261,18 @@ export const useArenaStore = create<ArenaState & ArenaActions>()(
           compressedSummary: compressRounds(s.roundHistory),
           pausedModelId,
           pausedReason: reason,
+          eliminatedModels: [...s.eliminatedModels],
         };
         const existing = getSavedSnapshotsLocal();
         existing.push(snap);
         localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(existing));
-        set({ status: 'paused', error: reason });
+        set({ status: 'paused', phase: 'paused', error: reason });
       },
 
       resumeGame: () => {
         const snapshots = getSavedSnapshotsLocal();
         if (snapshots.length === 0) return null;
         const latest = snapshots[snapshots.length - 1];
-        // 恢复状态
         set({
           competitors: JSON.parse(JSON.stringify(latest.competitors)).map((c: AIConfig) => ({
             ...c,
@@ -220,11 +286,17 @@ export const useArenaStore = create<ArenaState & ArenaActions>()(
           totalScores: { ...latest.totalScores },
           round: latest.currentRound,
           status: 'idle',
+          phase: 'idle',
           question: '',
           answers: {},
           scores: {},
           judgeComment: '',
           error: null,
+          privateChats: [],
+          publicMessages: [],
+          eliminatedModels: [...(latest.eliminatedModels || [])],
+          currentConversationId: null,
+          eliminationReasons: {},
         });
         return latest;
       },
@@ -235,10 +307,12 @@ export const useArenaStore = create<ArenaState & ArenaActions>()(
 
       // ─── 回合 ───
       startRound: () => {
-        const { competitors, judgeModel, gameRule, question, round } = get();
-        const activeCompetitors = competitors.filter((c) => c.runStatus === 'active');
-        if (activeCompetitors.length < 2) {
-          set({ error: '至少需要2个活跃参赛模型' });
+        const { competitors, judgeModel, gameRule, question, round, eliminatedModels } = get();
+        const survivors = competitors.filter(
+          (c) => c.runStatus === 'active' && !eliminatedModels.includes(c.id)
+        );
+        if (survivors.length < 2) {
+          set({ error: '至少需要2个存活参赛模型' });
           return false;
         }
         if (!judgeModel || judgeModel.runStatus !== 'active') {
@@ -255,26 +329,43 @@ export const useArenaStore = create<ArenaState & ArenaActions>()(
         }
         set({
           status: 'loading',
+          phase: 'judge_reading_rules',
           answers: {},
           scores: {},
           judgeComment: '',
           error: null,
+          privateChats: [],
+          publicMessages: [],
+          currentConversationId: null,
         });
         return true;
       },
 
       nextRound: () => {
-        const { round, gameRule } = get();
-        if (round + 1 >= gameRule.maxRounds) {
-          set({ status: 'finished', round: round + 1 });
+        const { round, gameRule, eliminatedModels, competitors } = get();
+        const survivors = competitors.filter(
+          (c) => c.runStatus === 'active' && !eliminatedModels.includes(c.id)
+        );
+        if (survivors.length <= 1) {
+          set({ status: 'finished', phase: 'game_over' });
+        } else if (round + 1 >= gameRule.maxRounds) {
+          set({ status: 'finished', phase: 'game_over', round: round + 1 });
         } else {
-          set({ round: round + 1, status: 'idle', question: '' });
+          set({
+            round: round + 1,
+            status: 'idle',
+            phase: 'idle',
+            question: '',
+            privateChats: [],
+            publicMessages: [],
+          });
         }
       },
 
       resetGame: () =>
         set({
           status: 'idle',
+          phase: 'idle',
           round: 0,
           question: '',
           answers: {},
@@ -283,6 +374,11 @@ export const useArenaStore = create<ArenaState & ArenaActions>()(
           totalScores: {},
           roundHistory: [],
           error: null,
+          privateChats: [],
+          publicMessages: [],
+          eliminatedModels: [],
+          currentConversationId: null,
+          eliminationReasons: {},
         }),
 
       // ─── 本地LLM ───
@@ -298,6 +394,8 @@ export const useArenaStore = create<ArenaState & ArenaActions>()(
         totalScores: state.totalScores,
         round: state.round,
         roundHistory: state.roundHistory,
+        eliminatedModels: state.eliminatedModels,
+        eliminationReasons: state.eliminationReasons,
       }),
     }
   )
@@ -318,10 +416,13 @@ function compressRounds(rounds: RoundRecord[]): string {
   if (rounds.length === 0) return '';
   return rounds
     .map((r) => {
+      const eliminatedStr = r.eliminatedThisRound?.length
+        ? `淘汰: ${r.eliminatedThisRound.join(', ')}`
+        : '无淘汰';
       const scoresStr = Object.entries(r.scores)
         .map(([id, s]) => `  ${id}: ${s}分`)
         .join('\n');
-      return `[第${r.round + 1}轮] 问题: ${r.question.slice(0, 80)}...\n裁判点评: ${r.judgeComment.slice(0, 100)}...\n分数:\n${scoresStr}`;
+      return `[第${r.round + 1}轮] 问题: ${r.question.slice(0, 80)}...\n${eliminatedStr}\n裁判点评: ${r.judgeComment.slice(0, 100)}...\n分数:\n${scoresStr}`;
     })
     .join('\n---\n');
 }
