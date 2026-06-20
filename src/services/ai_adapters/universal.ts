@@ -1,4 +1,5 @@
 import type { AIConfig, AIResponse, JudgeResult, RoundRecord, GameRule, ChatMessage } from '../../types';
+import { resolveApiCredentials } from '../apiKeyManager';
 
 // ─── 额度耗尽检测 ───
 const QUOTA_ERROR_PATTERNS = [
@@ -51,11 +52,21 @@ export async function callAI(
   signal?: AbortSignal
 ): Promise<AIResponse> {
   try {
-    const { endpoint, apiKey, modelName, apiType } = config;
+    const { modelName, apiType } = config;
 
-    // 本地模型走 Ollama
-    if (apiType === 'local') {
-      return callLocalAI(config, systemPrompt, userPrompt, signal);
+    // 使用统一 API Key 管理：优先全局配置，回退到模型自带
+    const { apiKey, endpoint } = resolveApiCredentials(
+      apiType,
+      config.apiKey,
+      config.endpoint
+    );
+
+    if (!apiKey) {
+      return {
+        modelId: config.id,
+        content: '',
+        error: `未配置 ${apiType} 的 API Key，请在全局 API Key 设置中配置`,
+      };
     }
 
     let headers: Record<string, string> = {
@@ -143,52 +154,6 @@ export async function callAI(
       modelId: config.id,
       content: '',
       error: err instanceof Error ? err.message : String(err),
-    };
-  }
-}
-
-// ─── 调用本地 Ollama ───
-async function callLocalAI(
-  config: AIConfig,
-  systemPrompt: string,
-  userPrompt: string,
-  signal?: AbortSignal
-): Promise<AIResponse> {
-  try {
-    const endpoint = config.endpoint || 'http://localhost:11434/v1/chat/completions';
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: config.modelName,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        stream: false,
-      }),
-      signal: signal || AbortSignal.timeout(300000),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return {
-        modelId: config.id,
-        content: '',
-        error: `Ollama错误(${response.status}): ${errorText.slice(0, 200)}`,
-      };
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
-
-    return { modelId: config.id, content };
-  } catch (err) {
-    return {
-      modelId: config.id,
-      content: '',
-      error: `本地LLM调用失败: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 }
@@ -564,16 +529,4 @@ ${eliminatedList}
   }
 
   return result.content;
-}
-
-// ─── 检测 Ollama 是否可用 ───
-export async function checkOllamaHealth(): Promise<boolean> {
-  try {
-    const res = await fetch('http://localhost:11434/api/tags', {
-      signal: AbortSignal.timeout(5000),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
 }

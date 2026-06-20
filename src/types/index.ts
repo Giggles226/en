@@ -10,8 +10,7 @@ export type ApiType =
   | 'moonshot'
   | 'zhipu'
   | 'stepfun'
-  | 'custom'
-  | 'local';
+  | 'custom';
 
 export const API_TYPE_LABELS: Record<ApiType, string> = {
   openai: 'OpenAI 兼容',
@@ -25,8 +24,14 @@ export const API_TYPE_LABELS: Record<ApiType, string> = {
   zhipu: '智谱AI',
   stepfun: '阶跃星辰',
   custom: '自定义',
-  local: '本地模型 (Ollama/llama.cpp)',
 };
+
+// ─── 全局 API Key 配置（CC Switch 风格统一管理） ───
+export interface ApiKeyConfig {
+  apiType: Exclude<ApiType, 'custom'>;
+  apiKey: string;
+  endpoint: string; // 自定义端点，留空则使用默认
+}
 
 // ─── 模型运行状态 ───
 export type ModelRunStatus = 'active' | 'quota_exhausted' | 'error' | 'paused' | 'eliminated';
@@ -182,9 +187,6 @@ export interface ArenaState {
   error: string | null;
   // 本轮对话历史（用于快照）
   roundHistory: RoundRecord[];
-  // 本地LLM状态
-  localLLMStatus: 'disconnected' | 'starting' | 'running' | 'error';
-  localLLMMessage: string;
   // 新增：私人对话
   privateChats: PrivateChat[];
   // 新增：公共发言

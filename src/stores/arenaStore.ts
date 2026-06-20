@@ -44,8 +44,6 @@ interface ArenaActions {
   startRound: () => boolean;
   nextRound: () => void;
   resetGame: () => void;
-  // 本地LLM
-  setLocalLLMStatus: (status: ArenaState['localLLMStatus'], message?: string) => void;
 }
 
 const MAX_COMPETITORS = 24;
@@ -67,8 +65,6 @@ export const useArenaStore = create<ArenaState & ArenaActions>()(
       totalScores: {},
       error: null,
       roundHistory: [],
-      localLLMStatus: 'disconnected',
-      localLLMMessage: '',
       privateChats: [],
       publicMessages: [],
       eliminatedModels: [],
@@ -380,10 +376,6 @@ export const useArenaStore = create<ArenaState & ArenaActions>()(
           currentConversationId: null,
           eliminationReasons: {},
         }),
-
-      // ─── 本地LLM ───
-      setLocalLLMStatus: (status, message) =>
-        set({ localLLMStatus: status, localLLMMessage: message || '' }),
     }),
     {
       name: 'ai-tavern-arena-storage',
