@@ -5,6 +5,9 @@ on:
     branches: [main, master]
   workflow_dispatch:  # 允许手动触发
 
+permissions:
+  contents: write
+
 jobs:
   build-apk:
     name: Build APK
