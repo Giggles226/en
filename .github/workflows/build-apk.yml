@@ -41,6 +41,21 @@ jobs:
         with:
           packages: 'platforms;android-36 build-tools;36.0.0 ndk;27.0.12077973'
 
+      - name: Fix broken Gradle init script
+        run: |
+          # setup-android 有时会生成语法有问题的 init.gradle，删除它
+          rm -f ~/.gradle/init.gradle ~/.gradle/init.d/*.gradle 2>/dev/null || true
+          # 确保 Gradle 仓库配置正确
+          mkdir -p ~/.gradle
+          cat > ~/.gradle/init.gradle << 'GRADLE_INIT'
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          GRADLE_INIT
+
       - name: Install npm dependencies
         run: npm ci
 
@@ -72,7 +87,8 @@ jobs:
             - 生存博弈模式
             - 裁判Agent全自动主持
             - 私人对话淘汰制
-            - 支持多厂商API和本地Ollama
+            - 支持多厂商API + 统一API Key管理
+            - 磨砂玻璃UI · 暗色琥珀金主题
 
             > 安装前请确保允许"未知来源"应用安装
           files: |
