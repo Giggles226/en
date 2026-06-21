@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useArenaStore } from '../stores/arenaStore';
+import { useArenaStore, compressRounds } from '../stores/arenaStore';
 import { ConfigPanel } from './ConfigPanel';
 import { RuleEditor } from './RuleEditor';
 import { SnapshotPanel } from './SnapshotPanel';
@@ -13,182 +13,240 @@ import {
   judgeAgentDeliberate,
   judgeAgentPublicAnnounce,
   buildRulePrompt,
+  buildRestoreContext,
+  type QuotaError,
 } from '../services/ai_adapters/universal';
-import type { RoundRecord, ChatMessage, PublicMessage } from '../types';
+import type { AIConfig, RoundRecord, PublicMessage } from '../types';
 import { generateChatMessageId } from '../types';
+
+// ─── 辅助函数（模块级，避免闭包陈旧值） ───
+
+function getSurvivorsFromStore(): AIConfig[] {
+  const { competitors, eliminatedModels } = useArenaStore.getState();
+  return competitors.filter(
+    (c) => c.runStatus === 'active' && !eliminatedModels.includes(c.id)
+  );
+}
+
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(t);
+        resolve();
+      },
+      { once: true }
+    );
+  });
+}
+
+// 构建恢复上下文（融合历史压缩摘要 + 上轮详情），注入裁判/模型 system prompt
+function buildRestoreContextFromStore(): string {
+  const st = useArenaStore.getState();
+  const history = st.roundHistory;
+  const lastRound = history.length > 0 ? history[history.length - 1] : null;
+  const compressedSummary = history.length > 0 ? compressRounds(history) : '';
+  return buildRestoreContext(compressedSummary, lastRound, st.gameRule);
+}
 
 export function Arena() {
   const {
     status,
     phase,
     competitors,
-    judgeModel,
-    question,
-    gameRule,
-    round,
     answers,
     scores,
     privateChats,
     eliminatedModels,
     eliminationReasons,
     currentConversationId,
-    setStatus,
-    setPhase,
-    setJudgeComment,
-    addRoundRecord,
-    setError,
-    initPrivateChats,
-    addPrivateMessage,
-    setCurrentConversationId,
-    eliminateModels,
-    addPublicMessage,
   } = useArenaStore();
 
   const isRunning = useRef(false);
   const roundProcessed = useRef(false);
-  const eliminatedBeforeRound = useRef<string[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
 
-  // ─── 主游戏循环 ───
+  // ─── 主游戏循环：仅在 status==='loading' 时启动一次自驱动 runRound ───
   useEffect(() => {
-    if (status !== 'loading' || !judgeModel || !question) return;
-    if (isRunning.current) return;
-
-    const survivors = competitors.filter(
-      (c) => c.runStatus === 'active' && !eliminatedModels.includes(c.id)
-    );
-
-    if (survivors.length < 2 && phase !== 'round_end' && phase !== 'game_over') {
-      setPhase('round_end');
-      setStatus('finished');
-      return;
-    }
+    if (status !== 'loading') return;
+    const judge = useArenaStore.getState().judgeModel;
+    const q = useArenaStore.getState().question;
+    if (!judge || !q) return;
+    if (isRunning.current) return; // 防重入（含 StrictMode 双调用）
 
     isRunning.current = true;
     roundProcessed.current = false;
-    eliminatedBeforeRound.current = [...eliminatedModels];
 
-    runGameLoop(survivors).finally(() => {
-      isRunning.current = false;
-    });
-  }, [status, phase, competitors, judgeModel, question, eliminatedModels]);
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
 
-  async function runGameLoop(survivors: ReturnType<typeof getSurvivors>) {
-    try {
-      if (phase === 'judge_reading_rules') {
-        await new Promise((r) => setTimeout(r, 500));
-        setPhase('private_conversations');
-        initPrivateChats(survivors.map((s) => s.id));
-        return;
-      }
-      if (phase === 'private_conversations') {
-        await runPrivateConversations(survivors);
-        return;
-      }
-      if (phase === 'judge_deliberation') {
-        await runDeliberation(survivors);
-        return;
-      }
-      if (phase === 'public_announcement') {
-        await runPublicAnnouncement(survivors);
-        return;
-      }
-      if (phase === 'round_end') {
-        await finalizeRound(survivors);
-        return;
-      }
-    } catch (err) {
-      setStatus('idle');
-      setPhase('idle');
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  function getSurvivors() {
-    return competitors.filter(
-      (c) => c.runStatus === 'active' && !eliminatedModels.includes(c.id)
-    );
-  }
-
-  async function runPrivateConversations(survivors: ReturnType<typeof getSurvivors>) {
-    const currentChats = useArenaStore.getState().privateChats;
-    const allDone = survivors.every((s) => {
-      const chat = currentChats.find((c) => c.competitorId === s.id);
-      return chat && !chat.isActive;
-    });
-
-    if (allDone) {
-      setPhase('judge_deliberation');
-      return;
-    }
-
-    const nextSurvivor = survivors.find((s) => {
-      const chat = currentChats.find((c) => c.competitorId === s.id);
-      return chat && chat.isActive;
-    });
-
-    if (!nextSurvivor) {
-      setPhase('judge_deliberation');
-      return;
-    }
-
-    setCurrentConversationId(nextSurvivor.id);
-
-    const chat = currentChats.find((c) => c.competitorId === nextSurvivor.id);
-    const existingMessages = chat?.messages || [];
-    const turnIndex = existingMessages.filter((m) => m.role === 'judge').length;
-    const maxTurns = gameRule.maxPrivateTurns || 3;
-
-    const result = await judgeAgentPrivateChat(
-      judgeModel!,
-      nextSurvivor,
-      gameRule,
-      question,
-      existingMessages,
-      turnIndex
-    );
-
-    const now = Date.now();
-
-    const judgeMsg: ChatMessage = {
-      id: generateChatMessageId(),
-      role: 'judge',
-      content: result.judgeMessage,
-      timestamp: now,
-    };
-    addPrivateMessage(nextSurvivor.id, judgeMsg);
-
-    const competitorMsg: ChatMessage = {
-      id: generateChatMessageId(),
-      role: 'competitor',
-      content: result.competitorResponse,
-      timestamp: now + 1,
-    };
-    addPrivateMessage(nextSurvivor.id, competitorMsg);
-
-    if (result.shouldEliminate) {
-      eliminateModels([nextSurvivor.id], {
-        [nextSurvivor.id]: result.eliminateReason || '裁判判定淘汰',
+    runRound(ctrl.signal)
+      .catch((err) => {
+        const st = useArenaStore.getState();
+        st.setStatus('idle');
+        st.setPhase('idle');
+        st.setError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        isRunning.current = false;
+        abortRef.current = null;
       });
-    }
 
-    if (result.isConversationEnd || result.shouldEliminate || turnIndex + 1 >= maxTurns) {
-      useArenaStore.setState((s) => ({
-        privateChats: s.privateChats.map((c) =>
-          c.competitorId === nextSurvivor.id ? { ...c, isActive: false } : c
-        ),
-      }));
-    }
+    // cleanup：status 变化（暂停/结束/卸载）时中止循环
+    return () => {
+      ctrl.abort();
+    };
+    // 仅依赖 status —— phase/privateChats 等变化不再触发 effect，避免死锁
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
 
-    setCurrentConversationId(null);
-    await new Promise((r) => setTimeout(r, 300));
+  // ─── 额度耗尽统一处理：标记模型 + 自动暂停建快照 ───
+  function handleQuotaPause(qe: QuotaError) {
+    const st = useArenaStore.getState();
+    st.updateModelStatus(qe.modelId, 'quota_exhausted', qe.message);
+    st.pauseGame(
+      qe.modelId,
+      `${qe.modelName}（${qe.role === 'judge' ? '裁判' : '参赛模型'}）额度耗尽：${qe.message}`
+    );
   }
 
-  async function runDeliberation(survivors: ReturnType<typeof getSurvivors>) {
-    const currentChats = useArenaStore.getState().privateChats;
-    const currentEliminated = useArenaStore.getState().eliminatedModels;
+  // ─── 相位驱动的可恢复主循环 ───
+  async function runRound(signal: AbortSignal) {
+    while (!signal.aborted) {
+      const st = useArenaStore.getState();
+      const phase = st.phase;
+      const survivors = getSurvivorsFromStore();
+
+      // 存活不足，提前结束
+      if (survivors.length < 2 && phase !== 'round_end' && phase !== 'game_over') {
+        st.setPhase('game_over');
+        st.setStatus('finished');
+        return;
+      }
+
+      switch (phase) {
+        case 'judge_reading_rules': {
+          await delay(500, signal);
+          if (signal.aborted) return;
+          const s0 = getSurvivorsFromStore();
+          useArenaStore.getState().setPhase('private_conversations');
+          useArenaStore.getState().initPrivateChats(s0.map((s) => s.id));
+          break;
+        }
+        case 'private_conversations': {
+          await runPrivateConversationsLoop(signal);
+          if (signal.aborted) return;
+          if (useArenaStore.getState().status === 'paused') return; // 额度耗尽暂停
+          useArenaStore.getState().setPhase('judge_deliberation');
+          break;
+        }
+        case 'judge_deliberation': {
+          await runDeliberation(signal);
+          if (signal.aborted) return;
+          if (useArenaStore.getState().status === 'paused') return;
+          useArenaStore.getState().setPhase('public_announcement');
+          break;
+        }
+        case 'public_announcement': {
+          await runPublicAnnouncement(signal);
+          if (signal.aborted) return;
+          if (useArenaStore.getState().status === 'paused') return;
+          useArenaStore.getState().setPhase('round_end');
+          break;
+        }
+        case 'round_end': {
+          await finalizeRound(getSurvivorsFromStore());
+          return;
+        }
+        default:
+          return;
+      }
+    }
+  }
+
+  // ─── 私人对话：自驱动 while，逐 survivor 逐轮推进 ───
+  async function runPrivateConversationsLoop(signal: AbortSignal) {
+    const restoreContext = buildRestoreContextFromStore();
+
+    while (!signal.aborted) {
+      const st = useArenaStore.getState();
+      const survivors = getSurvivorsFromStore();
+      const currentChats = st.privateChats;
+      const maxTurns = st.gameRule.maxPrivateTurns || 3;
+
+      // 找下一个仍 active 的 survivor 对话
+      const next = survivors.find((s) => {
+        const chat = currentChats.find((c) => c.competitorId === s.id);
+        return chat && chat.isActive;
+      });
+      if (!next) break; // 全部完成 → 退出，回到 runRound 推进到 deliberation
+
+      const chat = currentChats.find((c) => c.competitorId === next.id)!;
+      const turnIndex = chat.messages.filter((m) => m.role === 'judge').length;
+
+      st.setCurrentConversationId(next.id);
+
+      const result = await judgeAgentPrivateChat(
+        st.judgeModel!,
+        next,
+        st.gameRule,
+        st.question,
+        chat.messages,
+        turnIndex,
+        restoreContext
+      );
+      if (signal.aborted) return;
+
+      // 额度耗尽 → 暂停（pauseGame 设 status='paused' → effect cleanup abort）
+      if (result.quotaError) {
+        handleQuotaPause(result.quotaError);
+        return;
+      }
+
+      const now = Date.now();
+      st.addPrivateMessage(next.id, {
+        id: generateChatMessageId(),
+        role: 'judge',
+        content: result.judgeMessage,
+        timestamp: now,
+      });
+      st.addPrivateMessage(next.id, {
+        id: generateChatMessageId(),
+        role: 'competitor',
+        content: result.competitorResponse,
+        timestamp: now + 1,
+      });
+
+      if (result.shouldEliminate) {
+        st.eliminateModels([next.id], {
+          [next.id]: result.eliminateReason || '裁判判定淘汰',
+        });
+      }
+
+      if (result.isConversationEnd || result.shouldEliminate || turnIndex + 1 >= maxTurns) {
+        useArenaStore.setState((s) => ({
+          privateChats: s.privateChats.map((c) =>
+            c.competitorId === next.id ? { ...c, isActive: false } : c
+          ),
+        }));
+      }
+
+      st.setCurrentConversationId(null);
+      await delay(300, signal);
+    }
+  }
+
+  // ─── 裁判淘汰判定 ───
+  async function runDeliberation(signal: AbortSignal) {
+    const st = useArenaStore.getState();
+    const currentChats = st.privateChats;
+    const currentEliminated = st.eliminatedModels;
 
     const chatSummaries = currentChats.map((chat) => {
-      const comp = competitors.find((c) => c.id === chat.competitorId);
+      const comp = st.competitors.find((c) => c.id === chat.competitorId);
       return {
         competitorId: chat.competitorId,
         competitorName: comp?.name || chat.competitorId,
@@ -196,87 +254,113 @@ export function Arena() {
       };
     });
 
+    const restoreContext = buildRestoreContextFromStore();
     const result = await judgeAgentDeliberate(
-      judgeModel!,
-      gameRule,
-      survivors,
+      st.judgeModel!,
+      st.gameRule,
+      getSurvivorsFromStore(),
       currentEliminated,
       chatSummaries,
-      question,
-      round
+      st.question,
+      st.round,
+      restoreContext
     );
+    if (signal.aborted) return;
 
-    if (result.eliminatedThisRound.length > 0) {
-      eliminateModels(result.eliminatedThisRound, result.eliminationReasons);
+    if (result.quotaError) {
+      handleQuotaPause(result.quotaError);
+      return;
     }
 
-    setJudgeComment(result.deliberationComment);
-    setPhase('public_announcement');
+    if (result.eliminatedThisRound.length > 0) {
+      st.eliminateModels(result.eliminatedThisRound, result.eliminationReasons);
+    }
+
+    st.setJudgeComment(result.deliberationComment);
   }
 
-  async function runPublicAnnouncement(survivors: ReturnType<typeof getSurvivors>) {
-    const currentEliminated = useArenaStore.getState().eliminatedModels;
-    const currentReasons = useArenaStore.getState().eliminationReasons;
+  // ─── 裁判公共发言 ───
+  async function runPublicAnnouncement(signal: AbortSignal) {
+    const st = useArenaStore.getState();
+    const currentEliminated = st.eliminatedModels;
+    const currentReasons = st.eliminationReasons;
 
+    // Bug #4 修复：从 roundHistory 推算本轮增量（不依赖 ref）
+    const eliminatedBefore = st.roundHistory.flatMap((r) => r.eliminatedThisRound);
     const eliminatedThisRound = currentEliminated.filter(
-      (id) => !eliminatedBeforeRound.current.includes(id)
+      (id) => !eliminatedBefore.includes(id)
     );
 
-    const announcement = await judgeAgentPublicAnnounce(
-      judgeModel!,
-      gameRule,
-      survivors,
+    const restoreContext = buildRestoreContextFromStore();
+    const result = await judgeAgentPublicAnnounce(
+      st.judgeModel!,
+      st.gameRule,
+      getSurvivorsFromStore(),
       currentEliminated,
       eliminatedThisRound,
       currentReasons,
-      question,
-      round,
-      competitors
+      st.question,
+      st.round,
+      st.competitors,
+      restoreContext
     );
+    if (signal.aborted) return;
+
+    if (result.quotaError) {
+      handleQuotaPause(result.quotaError);
+      return;
+    }
 
     const pubMsg: PublicMessage = {
       id: generateChatMessageId(),
       from: 'judge',
-      fromName: judgeModel?.name || '裁判',
-      fromIcon: judgeModel?.icon || '👑',
-      content: announcement,
+      fromName: st.judgeModel?.name || '裁判',
+      fromIcon: st.judgeModel?.icon || '👑',
+      content: result.content,
       timestamp: Date.now(),
       visibleTo: 'all',
     };
-    addPublicMessage(pubMsg);
-
-    setPhase('round_end');
+    st.addPublicMessage(pubMsg);
   }
 
-  async function finalizeRound(survivors: ReturnType<typeof getSurvivors>) {
+  // ─── 本轮收尾 ───
+  async function finalizeRound(survivors: AIConfig[]) {
     if (roundProcessed.current) return;
     roundProcessed.current = true;
 
-    const currentChats = useArenaStore.getState().privateChats;
-    const currentPublic = useArenaStore.getState().publicMessages;
-    const currentEliminated = useArenaStore.getState().eliminatedModels;
+    const st = useArenaStore.getState();
+    const currentEliminated = st.eliminatedModels;
+
+    // Bug #4 修复：本轮增量淘汰列表
+    const eliminatedBefore = st.roundHistory.flatMap((r) => r.eliminatedThisRound);
+    const eliminatedThisRound = currentEliminated.filter(
+      (id) => !eliminatedBefore.includes(id)
+    );
 
     const record: RoundRecord = {
-      round,
-      question,
-      ruleReminder: buildRulePrompt(gameRule, question),
-      privateChats: currentChats,
-      publicMessages: currentPublic,
-      eliminatedThisRound: currentEliminated,
+      round: st.round,
+      question: st.question,
+      ruleReminder: buildRulePrompt(st.gameRule, st.question),
+      privateChats: st.privateChats,
+      publicMessages: st.publicMessages,
+      eliminatedThisRound, // 增量，不再是累计
       answers: {},
       scores: {},
-      judgeComment: useArenaStore.getState().judgeComment,
+      judgeComment: st.judgeComment,
       timestamp: Date.now(),
     };
-    addRoundRecord(record);
+    st.addRoundRecord(record);
 
     const newScores: Record<string, number> = {};
     survivors.forEach((s) => {
       newScores[s.id] = 10;
     });
-    useArenaStore.getState().setScores(newScores);
+    st.setScores(newScores);
 
-    setStatus('finished');
+    // 每轮结束自动存档（提供恢复点）
+    st.createSnapshot(`第${st.round + 1}轮结束自动存档`);
+
+    st.setStatus('finished');
   }
 
   // ─── 渲染数据 ───
@@ -305,7 +389,7 @@ export function Arena() {
         {/* ─── 顶部标题 ─── */}
         <header className="text-center pb-2">
           <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">
-            <span className="bg-gradient-to-r from-amber-300 via-orange-400 to-amber-500 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-violet-300 via-indigo-400 to-violet-500 bg-clip-text text-transparent">
               🍺 AI 酒馆竞技场
             </span>
           </h1>
@@ -317,7 +401,7 @@ export function Arena() {
         {/* ─── 游戏阶段指示器 ─── */}
         {status !== 'idle' && status !== 'paused' && (
           <div className="glass-card p-4 text-center animate-fade-in">
-            <span className="text-amber-400 font-bold text-sm">
+            <span className="text-violet-300 font-bold text-sm">
               {phaseLabel[phase] || phase}
             </span>
             {currentConversationId && (
@@ -331,8 +415,8 @@ export function Arena() {
         {/* ─── 暂停提示 ─── */}
         {isPaused && (
           <div className="glass-card-amber p-5 text-center animate-pulse-glow">
-            <p className="text-amber-300 font-bold text-lg mb-1">⏸️ 游戏已暂停</p>
-            <p className="text-amber-400/70 text-sm">
+            <p className="text-violet-200 font-bold text-lg mb-1">⏸️ 游戏已暂停</p>
+            <p className="text-violet-300/70 text-sm">
               某个模型额度耗尽，已自动保存快照。请在下方修复该模型后恢复。
             </p>
           </div>
@@ -444,8 +528,8 @@ export function Arena() {
         {status === 'finished' && phase === 'game_over' && (
           <div className="glass-card-amber p-6 text-center animate-fade-in">
             <p className="text-3xl mb-2">🏆</p>
-            <p className="text-amber-300 font-bold text-xl mb-1">游戏结束！</p>
-            <p className="text-amber-400/80 text-base">
+            <p className="text-violet-200 font-bold text-xl mb-1">游戏结束！</p>
+            <p className="text-violet-300/80 text-base">
               {survivors.length === 1
                 ? `最终胜者: ${survivors[0].icon} ${survivors[0].name}`
                 : survivors.length > 1

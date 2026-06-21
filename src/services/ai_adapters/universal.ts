@@ -1,4 +1,4 @@
-import type { AIConfig, AIResponse, JudgeResult, RoundRecord, GameRule, ChatMessage } from '../../types';
+import type { AIConfig, AIResponse, RoundRecord, GameRule, ChatMessage } from '../../types';
 import { resolveApiCredentials } from '../apiKeyManager';
 
 // ─── 额度耗尽检测 ───
@@ -12,6 +12,14 @@ function isQuotaError(status: number, body: string): boolean {
   if (status === 429 || status === 402) return true;
   if (status === 403 && QUOTA_ERROR_PATTERNS.some((p) => p.test(body))) return true;
   return QUOTA_ERROR_PATTERNS.some((p) => p.test(body));
+}
+
+// ─── 额度耗尽信息（冒泡给 Arena 层触发暂停） ───
+export interface QuotaError {
+  modelId: string;
+  modelName: string;
+  role: 'judge' | 'competitor';
+  message: string;
 }
 
 // ─── 构建规则提示词 ───
@@ -184,130 +192,8 @@ export async function callAI(
   }
 }
 
-// ─── 同时调用多个模型（带逐模型错误处理） ───
-export async function callMultipleAI(
-  configs: AIConfig[],
-  systemPrompt: string,
-  userPrompt: string
-): Promise<{ answers: Record<string, string>; quotaErrors: string[] }> {
-  const results = await Promise.all(
-    configs.map((c) => callAI(c, systemPrompt, userPrompt))
-  );
-
-  const answers: Record<string, string> = {};
-  const quotaErrors: string[] = [];
-
-  results.forEach((r) => {
-    if (r.isQuotaError) {
-      answers[r.modelId] = `[额度耗尽] ${r.error || ''}`;
-      quotaErrors.push(r.modelId);
-    } else if (r.error) {
-      answers[r.modelId] = `[错误: ${r.error}]`;
-    } else {
-      answers[r.modelId] = r.content;
-    }
-  });
-
-  return { answers, quotaErrors };
-}
-
-// ─── 裁判评分（含规则遵守度） ───
-export async function judgeAnswers(
-  judgeModel: AIConfig,
-  gameRule: GameRule,
-  question: string,
-  answers: Record<string, string>,
-  competitorNames: Record<string, { name: string; icon: string }>
-): Promise<JudgeResult> {
-  const answersText = Object.entries(answers)
-    .map(([id, text]) => {
-      const info = competitorNames[id];
-      return `【${info?.icon || ''} ${info?.name || id}】\n${text}`;
-    })
-    .join('\n\n');
-
-  const judgePrompt = `你是本次比赛的裁判。请根据以下规则和评分标准，评判各模型的回答。
-
-比赛规则：
-${gameRule.rules}
-
-${gameRule.judgeCriteria}
-
-本轮问题：${question}
-
-各模型回答：
-${answersText}
-
-请严格按照JSON格式返回（不要加其他文字）：
-{
-  "scores": { "model_id": 分数 },
-  "rankings": ["第1名id", "第2名id", ...],
-  "ruleCompliance": { "model_id": 规则遵守度(0-100) },
-  "comment": "整体点评（200字以内）"
-}`;
-
-  const result = await callAI(judgeModel, '', judgePrompt);
-
-  if (result.error) {
-    const defaultScores: Record<string, number> = {};
-    const defaultCompliance: Record<string, number> = {};
-    const ids = Object.keys(answers);
-    ids.forEach((id, i) => {
-      defaultScores[id] = Math.max(50, 80 - i * 5);
-      defaultCompliance[id] = 70;
-    });
-    return {
-      scores: defaultScores,
-      rankings: ids,
-      ruleCompliance: defaultCompliance,
-      comment: `评分失败：${result.error}`,
-    };
-  }
-
-  try {
-    const jsonMatch = result.content.match(/\{[\s\S]*\}/);
-    const jsonStr = jsonMatch ? jsonMatch[0] : result.content;
-    const parsed = JSON.parse(jsonStr);
-
-    const scores: Record<string, number> = {};
-    const ruleCompliance: Record<string, number> = {};
-    const knownIds = Object.keys(answers);
-
-    knownIds.forEach((id) => {
-      const s = parsed.scores?.[id];
-      scores[id] = typeof s === 'number' && s >= 0 && s <= 100 ? s : 60;
-      const rc = parsed.ruleCompliance?.[id];
-      ruleCompliance[id] = typeof rc === 'number' && rc >= 0 && rc <= 100 ? rc : 60;
-    });
-
-    const rankings = Array.isArray(parsed.rankings)
-      ? parsed.rankings.filter((r: string) => knownIds.includes(r))
-      : knownIds;
-
-    return {
-      scores,
-      rankings,
-      ruleCompliance,
-      comment: parsed.comment || result.content,
-    };
-  } catch {
-    const scores: Record<string, number> = {};
-    const ruleCompliance: Record<string, number> = {};
-    Object.keys(answers).forEach((id) => {
-      scores[id] = 70;
-      ruleCompliance[id] = 70;
-    });
-    return {
-      scores,
-      ruleCompliance,
-      rankings: Object.keys(answers),
-      comment: result.content,
-    };
-  }
-}
-
 // ═══════════════════════════════════════════════════════════════
-// 裁判 Agent 新模式：私人对话 + 淘汰判定
+// 裁判 Agent 模式：私人对话 + 淘汰判定
 // ═══════════════════════════════════════════════════════════════
 
 // ─── 裁判 Agent 与单个博弈模型进行私人对话 ───
@@ -317,13 +203,15 @@ export async function judgeAgentPrivateChat(
   gameRule: GameRule,
   question: string,
   previousMessages: ChatMessage[],
-  turnIndex: number
+  turnIndex: number,
+  restoreContext?: string
 ): Promise<{
   judgeMessage: string;
   competitorResponse: string;
   isConversationEnd: boolean;
   shouldEliminate: boolean;
   eliminateReason: string;
+  quotaError?: QuotaError;
 }> {
   const maxTurns = gameRule.maxPrivateTurns || 3;
 
@@ -341,7 +229,7 @@ ${gameRule.rules}
 淘汰标准：
 ${gameRule.judgeCriteria}
 
-当前是第${turnIndex + 1}/${maxTurns}轮对话。`;
+当前是第${turnIndex + 1}/${maxTurns}轮对话。${restoreContext ? '\n\n' + restoreContext : ''}`;
 
   // 构建对话历史
   let conversationHistory = '';
@@ -371,6 +259,23 @@ ${conversationHistory}
 
   // 裁判发消息
   const judgeResult = await callAI(judgeModel, judgeSystemPrompt, judgePrompt);
+
+  // 额度耗尽冒泡（裁判模型）
+  if (judgeResult.isQuotaError) {
+    return {
+      judgeMessage: '',
+      competitorResponse: '',
+      isConversationEnd: true,
+      shouldEliminate: false,
+      eliminateReason: '',
+      quotaError: {
+        modelId: judgeModel.id,
+        modelName: judgeModel.name,
+        role: 'judge',
+        message: judgeResult.error || '裁判模型额度耗尽',
+      },
+    };
+  }
 
   let judgeMessage = '';
   let isConversationEnd = turnIndex >= maxTurns - 1;
@@ -406,9 +311,26 @@ ${gameRule.rules}
 - 不要使用"作为AI"等免责声明
 - 保持竞争意识，争取不被淘汰
 
-${gameRule.roundPromptTemplate.replace('{rules}', gameRule.rules).replace('{question}', question)}`;
+${gameRule.roundPromptTemplate.replace('{rules}', gameRule.rules).replace('{question}', question)}${restoreContext ? '\n\n' + restoreContext : ''}`;
 
   const competitorResult = await callAI(competitor, competitorSystemPrompt, judgeMessage);
+
+  // 额度耗尽冒泡（参赛模型）—— 保留已生成的裁判消息
+  if (competitorResult.isQuotaError) {
+    return {
+      judgeMessage,
+      competitorResponse: '',
+      isConversationEnd: true,
+      shouldEliminate: false,
+      eliminateReason: '',
+      quotaError: {
+        modelId: competitor.id,
+        modelName: competitor.name,
+        role: 'competitor',
+        message: competitorResult.error || '参赛模型额度耗尽',
+      },
+    };
+  }
 
   let competitorResponse = competitorResult.error
     ? `[回答错误: ${competitorResult.error}]`
@@ -431,11 +353,13 @@ export async function judgeAgentDeliberate(
   eliminatedModels: string[],
   privateChats: { competitorId: string; competitorName: string; messages: ChatMessage[] }[],
   question: string,
-  roundNumber: number
+  roundNumber: number,
+  restoreContext?: string
 ): Promise<{
   eliminatedThisRound: string[];
   eliminationReasons: Record<string, string>;
   deliberationComment: string;
+  quotaError?: QuotaError;
 }> {
   const survivorsList = survivors.map(s => `- ${s.icon} ${s.name} (${s.id})`).join('\n');
 
@@ -472,9 +396,24 @@ ${chatSummaries}
   "eliminatedThisRound": ["被淘汰的模型ID列表"],
   "eliminationReasons": { "模型ID": "淘汰原因" },
   "deliberationComment": "你的判定总结（200字以内）"
-}`;
+}${restoreContext ? '\n\n' + restoreContext : ''}`;
 
   const result = await callAI(judgeModel, '', judgePrompt);
+
+  // 额度耗尽冒泡
+  if (result.isQuotaError) {
+    return {
+      eliminatedThisRound: [],
+      eliminationReasons: {},
+      deliberationComment: '',
+      quotaError: {
+        modelId: judgeModel.id,
+        modelName: judgeModel.name,
+        role: 'judge',
+        message: result.error || '裁判模型额度耗尽',
+      },
+    };
+  }
 
   if (result.error) {
     return {
@@ -513,8 +452,9 @@ export async function judgeAgentPublicAnnounce(
   eliminationReasons: Record<string, string>,
   question: string,
   roundNumber: number,
-  allCompetitors: AIConfig[]
-): Promise<string> {
+  allCompetitors: AIConfig[],
+  restoreContext?: string
+): Promise<{ content: string; quotaError?: QuotaError }> {
   const survivorsList = survivors.map(s => `- ${s.icon} ${s.name}`).join('\n');
   const eliminatedList = allCompetitors
     .filter(c => eliminatedModels.includes(c.id))
@@ -546,13 +486,26 @@ ${eliminatedList}
 - 对淘汰模型给予简短评价
 - 200字以内
 
-请直接返回发言内容，不要加JSON格式或其他标记。`;
+请直接返回发言内容，不要加JSON格式或其他标记。${restoreContext ? '\n\n' + restoreContext : ''}`;
 
   const result = await callAI(judgeModel, '', judgePrompt);
 
-  if (result.error) {
-    return `[裁判公共发言失败: ${result.error}]`;
+  // 额度耗尽冒泡
+  if (result.isQuotaError) {
+    return {
+      content: '',
+      quotaError: {
+        modelId: judgeModel.id,
+        modelName: judgeModel.name,
+        role: 'judge',
+        message: result.error || '裁判模型额度耗尽',
+      },
+    };
   }
 
-  return result.content;
+  if (result.error) {
+    return { content: `[裁判公共发言失败: ${result.error}]` };
+  }
+
+  return { content: result.content };
 }

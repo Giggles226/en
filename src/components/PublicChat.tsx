@@ -18,13 +18,13 @@ export function PublicChat() {
           <div key={msg.id}
             className={`rounded-2xl p-4 ${
               msg.from === 'judge'
-                ? 'bg-amber-500/5 border border-amber-500/20'
+                ? 'bg-violet-500/5 border border-violet-500/20'
                 : 'bg-blue-500/5 border border-blue-500/20'
             }`}>
             <div className="flex items-center gap-2 mb-2">
               <span className="text-lg">{msg.fromIcon}</span>
               <span className={`font-bold text-sm ${
-                msg.from === 'judge' ? 'text-amber-400' : 'text-blue-400'
+                msg.from === 'judge' ? 'text-violet-300' : 'text-blue-400'
               }`}>
                 {msg.fromName}
               </span>

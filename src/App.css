@@ -1,5 +1,44 @@
 @import "tailwindcss";
 
+/* ══════════════════════════════════════════════════════════
+   设计 Token（极光紫蓝 · 磨砂玻璃 · 超大圆角）
+   ══════════════════════════════════════════════════════════ */
+:root {
+  /* 背景层 */
+  --bg-from: #0a0a1a;
+  --bg-mid: #131028;
+  --bg-to: #0d0a20;
+
+  /* 玻璃质感 */
+  --glass-card-bg: rgba(30, 27, 50, 0.35);
+  --glass-card-border: rgba(167, 139, 250, 0.14);
+  --glass-sub-bg: rgba(20, 18, 38, 0.45);
+  --glass-sub-border: rgba(167, 139, 250, 0.10);
+  --glass-input-bg: rgba(15, 12, 30, 0.5);
+
+  /* 强调色（极光紫蓝） */
+  --accent-from: #8b5cf6;   /* violet-500 */
+  --accent-to: #6366f1;     /* indigo-500 */
+  --accent-hover-from: #a78bfa;
+  --accent-hover-to: #818cf8;
+  --accent-text: #c4b5fd;   /* violet-300 */
+  --accent-glow: rgba(139, 92, 246, 0.25);
+
+  /* 光晕 */
+  --halo-1: rgba(139, 92, 246, 0.10);
+  --halo-2: rgba(59, 130, 246, 0.07);
+
+  /* 圆角（超大） */
+  --radius-xl: 2.5rem;   /* 主卡片 */
+  --radius-lg: 2rem;     /* 子卡片 */
+  --radius-md: 1.25rem;  /* 输入框 */
+
+  /* 磨砂强度 */
+  --blur-card: 40px;
+  --blur-sub: 20px;
+  --blur-sm: 12px;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -12,12 +51,13 @@ html, body, #root {
 }
 
 body {
-  background: linear-gradient(160deg, #0a0a14 0%, #111122 30%, #0f0f1a 60%, #0a0a14 100%);
+  background: linear-gradient(160deg, var(--bg-from) 0%, var(--bg-mid) 30%, var(--bg-to) 60%, var(--bg-from) 100%);
   color: white;
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* 背景光晕 */
+/* 背景光晕（极光紫蓝） */
 body::before {
   content: '';
   position: fixed;
@@ -26,7 +66,7 @@ body::before {
   transform: translateX(-50%);
   width: 800px;
   height: 600px;
-  background: radial-gradient(ellipse, rgba(245, 158, 11, 0.06) 0%, transparent 70%);
+  background: radial-gradient(ellipse, var(--halo-1) 0%, transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
@@ -38,7 +78,7 @@ body::after {
   right: -10%;
   width: 600px;
   height: 500px;
-  background: radial-gradient(ellipse, rgba(249, 115, 22, 0.04) 0%, transparent 70%);
+  background: radial-gradient(ellipse, var(--halo-2) 0%, transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
@@ -52,36 +92,47 @@ body::after {
    磨砂玻璃通用组件
    ══════════════════════════════════════════════════════════ */
 
-/* 磨砂玻璃卡片 */
+/* 主玻璃卡片（超大圆角 + 强磨砂） */
 .glass-card {
-  background: rgba(30, 41, 59, 0.3);
-  backdrop-filter: blur(40px);
-  -webkit-backdrop-filter: blur(40px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 2rem;
+  background: var(--glass-card-bg);
+  backdrop-filter: blur(var(--blur-card));
+  -webkit-backdrop-filter: blur(var(--blur-card));
+  border: 1px solid var(--glass-card-border);
+  border-radius: var(--radius-xl);
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
+/* 强调玻璃卡片（暂停 / 游戏结束） */
 .glass-card-amber {
-  background: rgba(245, 158, 11, 0.05);
-  backdrop-filter: blur(40px);
-  -webkit-backdrop-filter: blur(40px);
-  border: 1px solid rgba(245, 158, 11, 0.2);
-  border-radius: 2rem;
+  background: rgba(139, 92, 246, 0.06);
+  backdrop-filter: blur(var(--blur-card));
+  -webkit-backdrop-filter: blur(var(--blur-card));
+  border: 1px solid rgba(167, 139, 250, 0.25);
+  border-radius: var(--radius-xl);
   box-shadow:
-    0 8px 32px rgba(245, 158, 11, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    0 8px 32px var(--accent-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* 子玻璃卡片（嵌套卡片真磨砂，取代假玻璃） */
+.glass-subcard {
+  background: var(--glass-sub-bg);
+  backdrop-filter: blur(var(--blur-sub));
+  -webkit-backdrop-filter: blur(var(--blur-sub));
+  border: 1px solid var(--glass-sub-border);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 /* 磨砂玻璃输入框 */
 .glass-input {
-  background: rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 1rem;
+  background: var(--glass-input-bg);
+  backdrop-filter: blur(var(--blur-sm));
+  -webkit-backdrop-filter: blur(var(--blur-sm));
+  border: 1px solid var(--glass-sub-border);
+  border-radius: var(--radius-md);
   padding: 0.875rem 1.25rem;
   color: white;
   transition: all 0.3s;
@@ -93,16 +144,16 @@ body::after {
 }
 
 .glass-input:focus {
-  border-color: rgba(245, 158, 11, 0.5);
-  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.15);
+  border-color: rgba(167, 139, 250, 0.5);
+  box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.2);
 }
 
 .glass-textarea {
-  background: rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 1rem;
+  background: var(--glass-input-bg);
+  backdrop-filter: blur(var(--blur-sm));
+  -webkit-backdrop-filter: blur(var(--blur-sm));
+  border: 1px solid var(--glass-sub-border);
+  border-radius: var(--radius-md);
   padding: 0.875rem 1.25rem;
   color: white;
   transition: all 0.3s;
@@ -115,15 +166,15 @@ body::after {
 }
 
 .glass-textarea:focus {
-  border-color: rgba(245, 158, 11, 0.5);
-  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.15);
+  border-color: rgba(167, 139, 250, 0.5);
+  box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.2);
 }
 
 /* 磨砂玻璃按钮 */
 .glass-btn {
   background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--blur-sm));
+  -webkit-backdrop-filter: blur(var(--blur-sm));
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 9999px;
   color: white;
@@ -135,7 +186,7 @@ body::after {
 
 .glass-btn:hover {
   background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: rgba(167, 139, 250, 0.2);
 }
 
 .glass-btn:active {
@@ -151,20 +202,21 @@ body::after {
   background: rgba(255, 255, 255, 0.05);
 }
 
+/* 主按钮（极光紫蓝渐变 · 胶囊） */
 .glass-btn-primary {
   border-radius: 9999px;
   font-weight: 700;
   padding: 0.875rem 2rem;
   color: white;
-  background: linear-gradient(to right, #f59e0b, #f97316);
+  background: linear-gradient(to right, var(--accent-from), var(--accent-to));
   cursor: pointer;
   border: none;
-  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.2);
+  box-shadow: 0 4px 16px var(--accent-glow);
   transition: all 0.2s;
 }
 
 .glass-btn-primary:hover {
-  background: linear-gradient(to right, #fbbf24, #fb923c);
+  background: linear-gradient(to right, var(--accent-hover-from), var(--accent-hover-to));
 }
 
 .glass-btn-primary:active {
@@ -179,8 +231,8 @@ body::after {
 
 .glass-btn-sm {
   background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--blur-sm));
+  -webkit-backdrop-filter: blur(var(--blur-sm));
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 9999px;
   color: white;
@@ -193,17 +245,17 @@ body::after {
 
 .glass-btn-sm:hover {
   background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: rgba(167, 139, 250, 0.2);
 }
 
-/* 标签 */
+/* 标签（胶囊） */
 .glass-badge {
   font-size: 0.75rem;
   padding: 0.25rem 0.75rem;
   border-radius: 9999px;
   font-weight: 500;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--blur-sm));
+  -webkit-backdrop-filter: blur(var(--blur-sm));
   display: inline-block;
 }
 
@@ -215,8 +267,8 @@ body::after {
   padding: 0.25rem 0.75rem;
   border-radius: 9999px;
   font-weight: 500;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--blur-sm));
+  -webkit-backdrop-filter: blur(var(--blur-sm));
   display: inline-block;
 }
 
@@ -228,8 +280,8 @@ body::after {
   padding: 0.25rem 0.75rem;
   border-radius: 9999px;
   font-weight: 500;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--blur-sm));
+  -webkit-backdrop-filter: blur(var(--blur-sm));
   display: inline-block;
 }
 
@@ -241,8 +293,8 @@ body::after {
   padding: 0.25rem 0.75rem;
   border-radius: 9999px;
   font-weight: 500;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--blur-sm));
+  -webkit-backdrop-filter: blur(var(--blur-sm));
   display: inline-block;
 }
 
@@ -254,14 +306,14 @@ body::after {
   padding: 0.25rem 0.75rem;
   border-radius: 9999px;
   font-weight: 500;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--blur-sm));
+  -webkit-backdrop-filter: blur(var(--blur-sm));
   display: inline-block;
 }
 
 /* 分隔线 */
 .glass-divider {
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  border-top: 1px solid rgba(167, 139, 250, 0.06);
   margin: 1rem 0;
 }
 
@@ -269,11 +321,45 @@ body::after {
 .glass-section-title {
   font-size: 0.875rem;
   font-weight: 700;
-  color: rgba(251, 191, 36, 0.8);
+  color: var(--accent-text);
   display: flex;
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 0.75rem;
+}
+
+/* ══════════════════════════════════════════════════════════
+   Android WebView 降级（不支持 backdrop-filter 时提高不透明度补偿）
+   ══════════════════════════════════════════════════════════ */
+@supports not (backdrop-filter: blur(1px)) {
+  .glass-card,
+  .glass-card-amber {
+    background: rgba(30, 27, 50, 0.88);
+  }
+  .glass-subcard {
+    background: rgba(20, 18, 38, 0.92);
+  }
+  .glass-input,
+  .glass-textarea {
+    background: rgba(15, 12, 30, 0.92);
+  }
+  .glass-btn,
+  .glass-btn-sm,
+  .glass-badge,
+  .glass-badge-green,
+  .glass-badge-red,
+  .glass-badge-amber,
+  .glass-badge-slate {
+    background: rgba(30, 27, 50, 0.9);
+  }
+}
+
+/* 移动端下调 blur 强度，减少低端 Android WebView 掉帧 */
+@media (max-width: 768px) {
+  :root {
+    --blur-card: 24px;
+    --blur-sub: 16px;
+  }
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -290,12 +376,12 @@ body::after {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(167, 139, 250, 0.15);
   border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(167, 139, 250, 0.3);
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -314,8 +400,8 @@ body::after {
 }
 
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.1); }
-  50% { box-shadow: 0 0 40px rgba(245, 158, 11, 0.2); }
+  0%, 100% { box-shadow: 0 0 20px var(--accent-glow); }
+  50% { box-shadow: 0 0 40px rgba(139, 92, 246, 0.35); }
 }
 
 .animate-fade-in {

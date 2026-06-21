@@ -19,7 +19,7 @@ export function ScoreBoard() {
   const hasAnyScore = sortedModels.some((m) => m.total > 0);
 
   return (
-    <div className="rounded-[1.5rem] p-4 bg-slate-900/20 border border-white/5">
+    <div className="glass-subcard p-4">
       <div className="flex items-center gap-2 mb-3">
         <span className="text-xl">🏆</span>
         <h3 className="text-sm font-bold text-white">积分榜</h3>
@@ -39,19 +39,19 @@ export function ScoreBoard() {
                   model.isEliminated
                     ? 'bg-red-500/5 border border-red-500/10'
                     : isFirst
-                    ? 'bg-amber-500/10 border border-amber-500/20'
-                    : 'bg-slate-900/20'
+                    ? 'bg-violet-500/10 border border-violet-500/25'
+                    : 'bg-white/[0.03]'
                 }`}>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
                   model.isEliminated
                     ? 'bg-red-500/20 text-red-400'
                     : index === 0 && model.total > 0
-                    ? 'bg-amber-500 text-amber-900'
+                    ? 'bg-violet-500 text-white'
                     : index === 1 && model.total > 0
                     ? 'bg-slate-300 text-slate-800'
                     : index === 2 && model.total > 0
-                    ? 'bg-amber-600 text-white'
-                    : 'bg-slate-800 text-slate-500'
+                    ? 'bg-amber-700 text-white'
+                    : 'bg-white/[0.06] text-slate-400'
                 }`}>
                   {model.isEliminated ? '💀' : model.total > 0 ? index + 1 : '-'}
                 </div>
@@ -61,7 +61,7 @@ export function ScoreBoard() {
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-white truncate text-sm">{model.name}</p>
                   <div className="flex gap-1">
-                    {model.isJudge && <span className="text-xs text-amber-400">裁判</span>}
+                    {model.isJudge && <span className="text-xs text-violet-300">裁判</span>}
                     {model.isEliminated && <span className="text-xs text-red-400">已淘汰</span>}
                   </div>
                 </div>
@@ -69,7 +69,7 @@ export function ScoreBoard() {
                 <div className="text-right">
                   <p className={`text-lg font-bold ${
                     model.isEliminated ? 'text-red-400/60 line-through' :
-                    isFirst ? 'text-amber-400' : 'text-white'
+                    isFirst ? 'text-violet-300' : 'text-white'
                   }`}>
                     {model.total}
                   </p>

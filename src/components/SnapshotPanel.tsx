@@ -2,7 +2,7 @@ import { useArenaStore } from '../stores/arenaStore';
 import type { GameSnapshot } from '../types';
 
 export function SnapshotPanel() {
-  const { getSavedSnapshots, restoreSnapshot, deleteSnapshot, status } = useArenaStore();
+  const { getSavedSnapshots, restoreSnapshot, deleteSnapshot, createSnapshot, status } = useArenaStore();
   const snapshots = getSavedSnapshots();
   const isPaused = status === 'paused';
 
@@ -15,9 +15,17 @@ export function SnapshotPanel() {
             快照存档 ({snapshots.length})
           </h3>
         </div>
-        {isPaused && (
-          <span className="glass-badge-amber">⏸️ 已暂停</span>
-        )}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => createSnapshot(`手动存档 ${new Date().toLocaleTimeString()}`)}
+            className="glass-btn-sm"
+          >
+            📸 存档
+          </button>
+          {isPaused && (
+            <span className="glass-badge-amber">⏸️ 已暂停</span>
+          )}
+        </div>
       </div>
 
       {snapshots.length === 0 ? (
@@ -52,17 +60,17 @@ function SnapshotCard({
   onDelete: () => void;
 }) {
   const date = new Date(snapshot.createdAt);
-  const isAuto = snapshot.label.includes('自动暂停');
+  const isPause = !!snapshot.pausedModelId;
   const eliminatedCount = snapshot.eliminatedModels?.length || 0;
 
   return (
     <div className={`rounded-2xl p-3 ${
-      isAuto ? 'bg-amber-500/5 border border-amber-500/20' : 'bg-slate-900/20 border border-white/5'
+      isPause ? 'bg-amber-500/5 border border-amber-500/20' : 'bg-white/[0.03] border border-white/5'
     }`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p className="text-sm text-white font-medium truncate">
-            {isAuto ? '⏸️ ' : '📸 '}{snapshot.label}
+            {isPause ? '⏸️ ' : '📸 '}{snapshot.label}
           </p>
           <p className="text-xs text-slate-500 mt-0.5">
             {date.toLocaleString()} · 第{snapshot.currentRound + 1}轮

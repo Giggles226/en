@@ -122,6 +122,15 @@ export interface GameSnapshot {
   pausedReason: string;
   // 淘汰列表
   eliminatedModels: string[];
+  // 恢复接续所需的本轮中间状态
+  phase: GamePhase;
+  question: string;
+  privateChats: PrivateChat[];
+  publicMessages: PublicMessage[];
+  currentConversationId: string | null;
+  eliminationReasons: Record<string, string>;
+  judgeComment: string;
+  scores: Record<string, number>;
 }
 
 // ─── AI 响应 ───

@@ -45,7 +45,7 @@ export function QuestionInput() {
           <span className={`glass-badge text-xs ${
             isRunning ? 'text-blue-400 bg-blue-500/10 border border-blue-500/20' :
             isFinished ? 'text-green-400 bg-green-500/10 border border-green-500/20' :
-            isPaused ? 'text-amber-400 bg-amber-500/10 border border-amber-500/20' :
+            isPaused ? 'text-violet-300 bg-violet-500/10 border border-violet-500/20' :
             'text-slate-400 bg-slate-500/10 border border-slate-500/20'
           }`}>
             {phaseLabel[phase] || phaseLabel.idle}
@@ -78,10 +78,20 @@ export function QuestionInput() {
 
       {/* 操作按钮 */}
       {isPaused ? (
-        <button onClick={() => resumeGame()}
-          className="glass-btn-primary w-full">
-          ▶️ 一键恢复游戏
-        </button>
+        <div className="space-y-3">
+          <p className="text-xs text-violet-300/70 text-center">
+            请先在上方配置面板修复额度耗尽的模型 API Key，再恢复游戏
+          </p>
+          <div className="flex gap-3">
+            <button onClick={() => resumeGame()}
+              className="glass-btn-primary flex-1">
+              ▶️ 恢复并继续游戏
+            </button>
+            <button onClick={resetGame} className="glass-btn">
+              🔄 放弃重开
+            </button>
+          </div>
+        </div>
       ) : isRunning ? (
         <div className="glass-btn w-full text-center text-slate-400 cursor-default">
           ⏳ 裁判Agent正在执行游戏流程...

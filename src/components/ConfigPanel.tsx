@@ -86,7 +86,7 @@ function GlobalApiKeySettings() {
                 return (
                   <div key={apiType}
                     className={`rounded-2xl p-3 flex items-center gap-3 transition border ${
-                      configured ? 'bg-green-500/5 border-green-500/20' : 'bg-slate-900/30 border-white/5'
+                      configured ? 'bg-green-500/5 border-green-500/20' : 'bg-white/[0.03] border-white/5'
                     }`}>
                     <span className={`text-lg ${configured ? '' : 'opacity-40'}`}>
                       {configured ? '🔑' : '🔒'}
@@ -113,8 +113,8 @@ function GlobalApiKeySettings() {
             </div>
 
             {editingType && (
-              <div className="bg-slate-900/40 rounded-2xl p-4 border border-amber-500/20">
-                <h4 className="text-sm font-bold text-amber-400 mb-3">
+              <div className="rounded-2xl p-4 border border-violet-500/20 bg-white/[0.03]">
+                <h4 className="text-sm font-bold text-violet-300 mb-3">
                   设置 {API_TYPE_LABELS[editingType]}
                 </h4>
                 <div className="space-y-3">
@@ -268,7 +268,7 @@ function JudgeApiKeyEditor({
         </div>
 
         <div className="space-y-4">
-          <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-900/30 border border-white/5">
+          <div className="flex items-center gap-3 p-3 rounded-2xl bg-white/[0.03] border border-white/5">
             <span className="text-3xl">{judgeModel.icon}</span>
             <div className="flex-1 min-w-0">
               <p className="font-bold text-white truncate">{judgeModel.name}</p>
@@ -279,8 +279,8 @@ function JudgeApiKeyEditor({
           </div>
 
           {hasGlobalKey && (
-            <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-3">
-              <p className="text-xs text-amber-400/80">
+            <div className="bg-violet-500/5 border border-violet-500/20 rounded-2xl p-3">
+              <p className="text-xs text-violet-300/80">
                 当前已配置 {API_TYPE_LABELS[judgeModel.apiType]} 的全局 API Key，裁判模型将自动使用。你也可以在此设置独立的 Key 覆盖全局配置。
               </p>
             </div>
@@ -386,9 +386,9 @@ export function ConfigPanel() {
 
       {/* 裁判模型 */}
       {judgeModel ? (
-        <div className="rounded-2xl p-4 border border-amber-500/20 bg-amber-500/5">
+        <div className="glass-subcard p-4 !border-violet-500/25 !bg-violet-500/5">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-bold text-amber-400 flex items-center gap-2">
+            <h3 className="text-sm font-bold text-violet-300 flex items-center gap-2">
               <span className="text-base">👑</span> 裁判模型
             </h3>
             <StatusBadge status={judgeModel.runStatus} />
@@ -401,7 +401,7 @@ export function ConfigPanel() {
             </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setEditingJudgeKey(true)} className="glass-btn-sm flex-1 border-amber-500/30 text-amber-400 hover:bg-amber-500/10">🔑 API Key</button>
+            <button onClick={() => setEditingJudgeKey(true)} className="glass-btn-sm flex-1 border-violet-500/30 text-violet-300 hover:bg-violet-500/10">🔑 API Key</button>
             <button onClick={() => setEditingJudge(true)} className="glass-btn-sm flex-1">编辑</button>
             <button onClick={clearJudge} className="glass-btn-sm flex-1 text-red-400 hover:bg-red-500/10 hover:border-red-500/30">取消</button>
           </div>
@@ -427,7 +427,7 @@ export function ConfigPanel() {
           <div className="space-y-2">
             {competitors.map((comp) => (
               <div key={comp.id}
-                className="rounded-2xl p-3 flex items-center gap-3 transition hover:bg-white/[0.02] border border-white/5 bg-slate-900/20">
+                className="rounded-2xl p-3 flex items-center gap-3 transition hover:bg-white/[0.06] border border-white/5 bg-white/[0.03]">
                 <span className="text-2xl">{comp.icon}</span>
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-white truncate text-sm">{comp.name}</p>
@@ -436,7 +436,7 @@ export function ConfigPanel() {
                 <StatusBadge status={comp.runStatus} />
                 <div className="flex gap-1">
                   <button onClick={() => setJudgeModel(comp)}
-                    className="text-xs text-amber-400 hover:bg-amber-500/10 px-2 py-1.5 rounded-full transition">👑</button>
+                    className="text-xs text-violet-300 hover:bg-violet-500/10 px-2 py-1.5 rounded-full transition">👑</button>
                   <button onClick={() => { setEditingId(comp.id); setAddingNew(false); }}
                     className="text-xs text-slate-400 hover:bg-white/5 px-2 py-1.5 rounded-full transition">✏️</button>
                   <button onClick={() => removeCompetitor(comp.id)}

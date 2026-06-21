@@ -189,48 +189,37 @@ export const useArenaStore = create<ArenaState & ArenaActions>()(
 
       // ─── 快照 ───
       createSnapshot: (label) => {
-        const s = get();
-        const snap: GameSnapshot = {
-          id: createSnapshotId(),
-          createdAt: Date.now(),
-          label,
-          competitors: JSON.parse(JSON.stringify(s.competitors)),
-          judgeModel: s.judgeModel ? JSON.parse(JSON.stringify(s.judgeModel)) : null,
-          gameRule: JSON.parse(JSON.stringify(s.gameRule)),
-          rounds: JSON.parse(JSON.stringify(s.roundHistory)),
-          totalScores: { ...s.totalScores },
-          currentRound: s.round,
-          compressedSummary: compressRounds(s.roundHistory),
-          pausedModelId: null,
-          pausedReason: '',
-          eliminatedModels: [...s.eliminatedModels],
-        };
-        const existing = getSavedSnapshotsLocal();
-        existing.push(snap);
-        localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(existing));
+        const snap = buildSnapshot(get(), label);
+        saveSnapshotsLocal(appendSnapshot(getSavedSnapshotsLocal(), snap));
         return snap;
       },
 
       restoreSnapshot: (snapshot) => {
         set({
-          competitors: JSON.parse(JSON.stringify(snapshot.competitors)),
-          judgeModel: snapshot.judgeModel ? JSON.parse(JSON.stringify(snapshot.judgeModel)) : null,
+          competitors: JSON.parse(JSON.stringify(snapshot.competitors)).map((c: AIConfig) => ({
+            ...c,
+            runStatus: 'active' as const,
+          })),
+          judgeModel: snapshot.judgeModel
+            ? { ...JSON.parse(JSON.stringify(snapshot.judgeModel)), runStatus: 'active' as const }
+            : null,
           gameRule: JSON.parse(JSON.stringify(snapshot.gameRule)),
           roundHistory: JSON.parse(JSON.stringify(snapshot.rounds)),
           totalScores: { ...snapshot.totalScores },
           round: snapshot.currentRound,
-          status: 'idle',
-          phase: 'idle',
-          question: '',
+          // 恢复接续字段（手动读档回到存档点状态，不自动续跑）
+          phase: snapshot.phase ?? 'idle',
+          question: snapshot.question ?? '',
+          privateChats: JSON.parse(JSON.stringify(snapshot.privateChats ?? [])),
+          publicMessages: JSON.parse(JSON.stringify(snapshot.publicMessages ?? [])),
+          currentConversationId: snapshot.currentConversationId ?? null,
+          eliminationReasons: { ...(snapshot.eliminationReasons ?? {}) },
+          judgeComment: snapshot.judgeComment ?? '',
+          scores: { ...(snapshot.scores ?? {}) },
           answers: {},
-          scores: {},
-          judgeComment: '',
           error: null,
-          privateChats: [],
-          publicMessages: [],
           eliminatedModels: [...(snapshot.eliminatedModels || [])],
-          currentConversationId: null,
-          eliminationReasons: {},
+          status: 'idle',
         });
       },
 
@@ -243,25 +232,10 @@ export const useArenaStore = create<ArenaState & ArenaActions>()(
 
       // ─── 暂停/恢复 ───
       pauseGame: (pausedModelId, reason) => {
-        const s = get();
-        const snap: GameSnapshot = {
-          id: createSnapshotId(),
-          createdAt: Date.now(),
-          label: `自动暂停 - ${new Date().toLocaleTimeString()}`,
-          competitors: JSON.parse(JSON.stringify(s.competitors)),
-          judgeModel: s.judgeModel ? JSON.parse(JSON.stringify(s.judgeModel)) : null,
-          gameRule: JSON.parse(JSON.stringify(s.gameRule)),
-          rounds: JSON.parse(JSON.stringify(s.roundHistory)),
-          totalScores: { ...s.totalScores },
-          currentRound: s.round,
-          compressedSummary: compressRounds(s.roundHistory),
-          pausedModelId,
-          pausedReason: reason,
-          eliminatedModels: [...s.eliminatedModels],
-        };
-        const existing = getSavedSnapshotsLocal();
-        existing.push(snap);
-        localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(existing));
+        const snap = buildSnapshot(get(), `自动暂停 - ${new Date().toLocaleTimeString()}`);
+        snap.pausedModelId = pausedModelId;
+        snap.pausedReason = reason;
+        saveSnapshotsLocal(appendSnapshot(getSavedSnapshotsLocal(), snap));
         set({ status: 'paused', phase: 'paused', error: reason });
       },
 
@@ -281,18 +255,20 @@ export const useArenaStore = create<ArenaState & ArenaActions>()(
           roundHistory: JSON.parse(JSON.stringify(latest.rounds)),
           totalScores: { ...latest.totalScores },
           round: latest.currentRound,
-          status: 'idle',
-          phase: 'idle',
-          question: '',
+          // 恢复接续字段（从快照还原本轮中间状态）
+          phase: latest.phase ?? 'private_conversations',
+          question: latest.question ?? '',
+          privateChats: JSON.parse(JSON.stringify(latest.privateChats ?? [])),
+          publicMessages: JSON.parse(JSON.stringify(latest.publicMessages ?? [])),
+          currentConversationId: latest.currentConversationId ?? null,
+          eliminationReasons: { ...(latest.eliminationReasons ?? {}) },
+          judgeComment: latest.judgeComment ?? '',
+          scores: { ...(latest.scores ?? {}) },
           answers: {},
-          scores: {},
-          judgeComment: '',
           error: null,
-          privateChats: [],
-          publicMessages: [],
-          eliminatedModels: [...(latest.eliminatedModels || [])],
-          currentConversationId: null,
-          eliminationReasons: {},
+          eliminatedModels: [...(latest.eliminatedModels ?? [])],
+          // 关键：自动续跑 —— 触发主循环 effect 从保存的相位接续
+          status: 'loading',
         });
         return latest;
       },
@@ -404,7 +380,63 @@ function getSavedSnapshotsLocal(): GameSnapshot[] {
   }
 }
 
-function compressRounds(rounds: RoundRecord[]): string {
+function saveSnapshotsLocal(snaps: GameSnapshot[]): void {
+  try {
+    localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(snaps));
+  } catch {
+    // localStorage 满或不可用，静默忽略
+  }
+}
+
+const MAX_SNAPSHOTS = 20;
+
+function appendSnapshot(existing: GameSnapshot[], snap: GameSnapshot): GameSnapshot[] {
+  const next = [...existing, snap];
+  // 超出上限删除最旧的，控制 localStorage 体积
+  return next.length > MAX_SNAPSHOTS ? next.slice(next.length - MAX_SNAPSHOTS) : next;
+}
+
+// 截断私人对话消息，避免快照过大撑爆 localStorage
+function truncateMessages(chats: PrivateChat[]): PrivateChat[] {
+  const MAX_MSG_LEN = 500;
+  return chats.map((c) => ({
+    ...c,
+    messages: c.messages.map((m) => ({
+      ...m,
+      content: m.content.length > MAX_MSG_LEN ? m.content.slice(0, MAX_MSG_LEN) + '…' : m.content,
+    })),
+  }));
+}
+
+// 构建快照的纯函数（createSnapshot / pauseGame 共用，避免双写）
+function buildSnapshot(state: ArenaState, label: string): GameSnapshot {
+  return {
+    id: createSnapshotId(),
+    createdAt: Date.now(),
+    label,
+    competitors: JSON.parse(JSON.stringify(state.competitors)),
+    judgeModel: state.judgeModel ? JSON.parse(JSON.stringify(state.judgeModel)) : null,
+    gameRule: JSON.parse(JSON.stringify(state.gameRule)),
+    rounds: JSON.parse(JSON.stringify(state.roundHistory)),
+    totalScores: { ...state.totalScores },
+    currentRound: state.round,
+    compressedSummary: compressRounds(state.roundHistory),
+    pausedModelId: null,
+    pausedReason: '',
+    eliminatedModels: [...state.eliminatedModels],
+    // 恢复接续所需的本轮中间状态
+    phase: state.phase,
+    question: state.question,
+    privateChats: JSON.parse(JSON.stringify(truncateMessages(state.privateChats))),
+    publicMessages: JSON.parse(JSON.stringify(state.publicMessages)),
+    currentConversationId: state.currentConversationId,
+    eliminationReasons: { ...state.eliminationReasons },
+    judgeComment: state.judgeComment,
+    scores: { ...state.scores },
+  };
+}
+
+export function compressRounds(rounds: RoundRecord[]): string {
   if (rounds.length === 0) return '';
   return rounds
     .map((r) => {
