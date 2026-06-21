@@ -44,6 +44,29 @@ export function buildRestoreContext(
   return parts.join('\n');
 }
 
+// ─── 带重试的 fetch ───
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  retries = 2
+): Promise<Response> {
+  let lastErr: unknown;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const response = await fetch(url, init);
+      // 5xx 服务端错误可重试，其他状态码直接返回
+      if (response.status < 500 || i >= retries) return response;
+      await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+    } catch (err) {
+      lastErr = err;
+      if (i < retries) {
+        await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 // ─── 调用 AI 模型 ───
 export async function callAI(
   config: AIConfig,
@@ -74,6 +97,7 @@ export async function callAI(
     };
 
     let body: Record<string, unknown> = {};
+    let url = endpoint;
 
     switch (apiType) {
       case 'anthropic':
@@ -88,6 +112,8 @@ export async function callAI(
         break;
       case 'google':
         headers['x-goog-api-key'] = apiKey;
+        // 替换端点中的 {model} 占位符为实际模型名称
+        url = endpoint.replace('{model}', modelName);
         body = {
           systemInstruction: { parts: [{ text: systemPrompt }] },
           contents: [{ parts: [{ text: userPrompt }] }],
@@ -106,7 +132,7 @@ export async function callAI(
         break;
     }
 
-    const response = await fetch(endpoint, {
+    const response = await fetchWithRetry(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
