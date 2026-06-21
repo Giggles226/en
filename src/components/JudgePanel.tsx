@@ -18,7 +18,7 @@ export function JudgePanel() {
   };
 
   return (
-    <div className="glass-subcard p-4">
+    <div className="glass-subcard p-5">
       <div className="flex items-center gap-2 mb-3">
         <span className="text-xl">👑</span>
         <h3 className="text-sm font-bold text-violet-300">裁判Agent</h3>

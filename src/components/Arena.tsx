@@ -385,7 +385,7 @@ export function Arena() {
 
   return (
     <div className="min-h-screen relative">
-      <div className="relative max-w-3xl mx-auto px-4 py-6 md:py-10 space-y-5">
+      <div className="relative max-w-4xl mx-auto px-5 md:px-8 py-8 md:py-12 space-y-6">
         {/* ─── 顶部标题 ─── */}
         <header className="text-center pb-2">
           <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">
@@ -425,7 +425,7 @@ export function Arena() {
         {/* ══════════════════════════════════════════════════════════
            配置卡片组
            ══════════════════════════════════════════════════════════ */}
-        <div className="glass-card p-5 md:p-6 space-y-5 animate-fade-in">
+        <div className="glass-card p-6 md:p-8 space-y-6 animate-fade-in">
           <ConfigPanel />
           <RuleEditor />
           <SnapshotPanel />
@@ -440,7 +440,7 @@ export function Arena() {
            竞技场 - 游戏进行中
            ══════════════════════════════════════════════════════════ */}
         {(survivors.length > 0 || eliminated.length > 0) && (
-          <div className="glass-card p-5 md:p-6 space-y-5 animate-fade-in">
+          <div className="glass-card p-6 md:p-8 space-y-6 animate-fade-in">
             {/* 存活模型网格 */}
             {survivors.length > 0 && (
               <section>
@@ -448,7 +448,7 @@ export function Arena() {
                   <span className="w-2 h-2 rounded-full bg-green-400" />
                   存活模型 ({survivors.length})
                 </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {survivors.map((comp) => {
                     const chat = privateChats.find((c) => c.competitorId === comp.id);
                     return (
@@ -475,7 +475,7 @@ export function Arena() {
                   <span className="w-2 h-2 rounded-full bg-red-400" />
                   已淘汰 ({eliminated.length}) · 已禁言
                 </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 opacity-70">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 opacity-70">
                   {eliminated.map((comp) => {
                     const chat = privateChats.find((c) => c.competitorId === comp.id);
                     return (
@@ -500,7 +500,7 @@ export function Arena() {
             <PublicChat />
 
             {/* 裁判 + 积分榜 并排 */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <JudgePanel />
               <ScoreBoard />
             </div>

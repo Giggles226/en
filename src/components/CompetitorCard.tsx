@@ -43,7 +43,7 @@ export function CompetitorCard({
   };
 
   // 外层：玻璃子卡基底 + 状态色叠层
-  const outerCls = `glass-subcard p-4 transition-all duration-300 ${
+  const outerCls = `glass-subcard p-5 transition-all duration-300 ${
     isEliminated
       ? '!bg-red-500/5 !border-red-500/25'
       : isConversing

@@ -241,28 +241,31 @@ function ModelEditor({
   );
 }
 
-// ─── 裁判模型 API Key 快捷设置弹窗 ───
+// ─── 裁判模型配置弹窗（API Key + 地址 + 模型名） ───
 function JudgeApiKeyEditor({
   judgeModel,
   onSave,
   onCancel,
 }: {
   judgeModel: AIConfig;
-  onSave: (apiKey: string) => void;
+  onSave: (config: { apiKey: string; endpoint: string; modelName: string }) => void;
   onCancel: () => void;
 }) {
   const [apiKey, setApiKey] = useState(judgeModel.apiKey || '');
+  const [endpoint, setEndpoint] = useState(judgeModel.endpoint || '');
+  const [modelName, setModelName] = useState(judgeModel.modelName || '');
   const [showKey, setShowKey] = useState(false);
 
   const globalConfig = getAllApiKeyConfigs().find((c) => c.apiType === judgeModel.apiType);
   const hasGlobalKey = !!(globalConfig && globalConfig.apiKey.trim());
+  const defaultEndpoint = DEFAULT_ENDPOINTS[judgeModel.apiType as Exclude<ApiType, 'custom'>] || '';
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md glass-card p-5 md:p-6">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
-            <span>👑</span> 设置裁判模型 API Key
+            <span>👑</span> 配置裁判模型
           </h3>
           <button onClick={onCancel} className="text-slate-400 hover:text-white text-2xl leading-none">×</button>
         </div>
@@ -273,7 +276,7 @@ function JudgeApiKeyEditor({
             <div className="flex-1 min-w-0">
               <p className="font-bold text-white truncate">{judgeModel.name}</p>
               <p className="text-xs text-slate-400 truncate">
-                {judgeModel.modelName} · {API_TYPE_LABELS[judgeModel.apiType]}
+                {API_TYPE_LABELS[judgeModel.apiType]}
               </p>
             </div>
           </div>
@@ -288,6 +291,33 @@ function JudgeApiKeyEditor({
 
           <div>
             <label className="block text-xs text-slate-400 mb-1.5 font-medium">
+              模型名称 <span className="text-slate-600">（模型标识，如 gpt-4o）</span>
+            </label>
+            <input
+              type="text"
+              value={modelName}
+              onChange={(e) => setModelName(e.target.value)}
+              placeholder="例如: gpt-4o"
+              className="glass-input w-full text-sm"
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-slate-400 mb-1.5 font-medium">
+              API 地址 <span className="text-slate-600">（留空使用默认）</span>
+            </label>
+            <input
+              type="text"
+              value={endpoint}
+              onChange={(e) => setEndpoint(e.target.value)}
+              placeholder={defaultEndpoint || 'https://api.openai.com/v1/chat/completions'}
+              className="glass-input w-full text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-slate-400 mb-1.5 font-medium">
               API Key
               {hasGlobalKey && <span className="text-slate-600">（留空则使用全局配置）</span>}
             </label>
@@ -298,7 +328,6 @@ function JudgeApiKeyEditor({
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder={hasGlobalKey ? '留空使用全局 API Key...' : '请输入裁判模型的 API Key...'}
                 className="glass-input w-full pr-12"
-                autoFocus
               />
               <button
                 type="button"
@@ -312,8 +341,8 @@ function JudgeApiKeyEditor({
 
           <div className="flex gap-2">
             <button
-              onClick={() => onSave(apiKey)}
-              disabled={!apiKey.trim() && !hasGlobalKey}
+              onClick={() => onSave({ apiKey, endpoint, modelName })}
+              disabled={!modelName.trim() && !apiKey.trim() && !hasGlobalKey}
               className="glass-btn-primary flex-1 py-2.5 text-sm"
             >
               保存
@@ -370,9 +399,9 @@ export function ConfigPanel() {
     setEditingJudge(false);
   };
 
-  const handleSaveJudgeKey = (apiKey: string) => {
+  const handleSaveJudgeKey = (config: { apiKey: string; endpoint: string; modelName: string }) => {
     if (judgeModel) {
-      updateCompetitor(judgeModel.id, { apiKey });
+      updateCompetitor(judgeModel.id, { ...config, runStatus: 'active' });
     }
     setEditingJudgeKey(false);
   };
@@ -401,8 +430,8 @@ export function ConfigPanel() {
             </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setEditingJudgeKey(true)} className="glass-btn-sm flex-1 border-violet-500/30 text-violet-300 hover:bg-violet-500/10">🔑 API Key</button>
-            <button onClick={() => setEditingJudge(true)} className="glass-btn-sm flex-1">编辑</button>
+            <button onClick={() => setEditingJudgeKey(true)} className="glass-btn-sm flex-1 border-violet-500/30 text-violet-300 hover:bg-violet-500/10">🔑 配置 Key/地址</button>
+            <button onClick={() => setEditingJudge(true)} className="glass-btn-sm flex-1">完整编辑</button>
             <button onClick={clearJudge} className="glass-btn-sm flex-1 text-red-400 hover:bg-red-500/10 hover:border-red-500/30">取消</button>
           </div>
         </div>

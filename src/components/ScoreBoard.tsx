@@ -19,7 +19,7 @@ export function ScoreBoard() {
   const hasAnyScore = sortedModels.some((m) => m.total > 0);
 
   return (
-    <div className="glass-subcard p-4">
+    <div className="glass-subcard p-5">
       <div className="flex items-center gap-2 mb-3">
         <span className="text-xl">🏆</span>
         <h3 className="text-sm font-bold text-white">积分榜</h3>

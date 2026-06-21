@@ -28,9 +28,9 @@ export function QuestionInput() {
   };
 
   return (
-    <div className="glass-card p-5 md:p-6 animate-fade-in">
+    <div className="glass-card p-6 md:p-8 animate-fade-in">
       {/* 顶部状态栏 */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3 text-xs text-slate-400">
           <span className="glass-badge-green text-xs">🟢 {survivors.length} 存活</span>
           {eliminatedModels.length > 0 && (
